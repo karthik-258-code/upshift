@@ -184,6 +184,10 @@ async def _upgrade(source: str, package: str, keep: bool, budget_usd: float | No
         )
     if result.error:
         print(f"  error: {result.error}")
+    for failure in (result.final or {}).get("failures", [])[:10]:
+        lines = [ln.strip() for ln in failure["message"].splitlines() if ln.strip()]
+        error = next((ln for ln in reversed(lines) if ln.startswith("E ")), lines[0] if lines else "")
+        print(f"  still failing: {failure['test']}  {error[:160]}")
     print(f"  files changed: {', '.join(result.files_changed) or 'none'}")
     print(f"  cost: historian ${dossier.cost_usd:.4f} + surgeon ${result.cost_usd:.4f} "
           f"= ${budget.spent_usd:.4f} of ${budget.cap_usd:.2f}")

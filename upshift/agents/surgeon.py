@@ -74,9 +74,12 @@ SYSTEM_PROMPT = (
     "contents of the files you are allowed to edit. Produce the minimal, correct edits that "
     "make the suite pass on the NEW version while preserving the project's behaviour.\n"
     "Rules: use the modern API the migration guide recommends, not compatibility shims. Never "
-    "pin the package back. Never delete tests or weaken assertions; if a test asserts the OLD "
-    "library's behaviour (for example the exception type it raised), update it to the "
-    "documented new behaviour and say so in the justification. Fix every failure you can see, "
+    "pin the package back. Never delete tests or weaken them: a test's inputs and the call "
+    "under test must stay exactly as they are. The ONLY permitted change to a test is its "
+    "expected outcome (for example the exception type) when the library's documented "
+    "behaviour changed, and the justification must cite that change. If a test fails because "
+    "the application code no longer enforces something (a constant field, a constraint), fix "
+    "the application code so the test passes as written. Fix every failure you can see, "
     "not just the first. Prefer EDIT blocks; use WRITE only when most of a file changes, and "
     "then include the complete file. Write real newlines, never the characters backslash-n. "
     "Do not edit version pins in requirements or pyproject files; to add a package, list it "
@@ -383,6 +386,10 @@ class Surgeon:
             )
         if not dossier.relevant:
             parts.append("(none identified; rely on the test failures)")
+        others = [e for e in dossier.entries if not e.relevant and e.category != "noise"]
+        if others:
+            parts.append("\nOther documented changes in this version range (titles only):")
+            parts += [f"- [{e.category}] {e.title}: {e.migration}"[:300] for e in others[:25]]
         if dossier.requires_new_dependencies:
             parts.append(
                 "\nNew packages already added to the manifest: "
@@ -435,63 +442,117 @@ class Surgeon:
 
     # ---- edits --------------------------------------------------------------
 
-    def apply_edit(
+    def apply_edits(
         self,
         workspace: Path,
         allowed: list[str],
-        edit: dict[str, Any],
+        edits: list[dict[str, Any]],
         originals: dict[str, str | None],
-    ) -> AppliedEdit:
-        raw_path = str(edit.get("path", ""))
-        op = str(edit.get("op", ""))
-        justification = str(edit.get("justification", ""))
-        evidence = str(edit.get("evidence_url", ""))
+    ) -> list[AppliedEdit]:
+        """Apply a whole response at once.
 
-        def rejected(reason: str) -> AppliedEdit:
-            return AppliedEdit(raw_path, op, justification, evidence, "rejected", reason)
-
-        rel = _clean_path(raw_path)
-        if rel is None:
-            return rejected("invalid path")
-        if op not in ("replace_block", "write_file"):
-            return rejected(f"unknown op {op!r}")
-        current = _read(workspace, rel)
+        WRITE blocks go first. EDIT blocks are then all located against the content as the
+        model saw it (after any WRITE) and applied bottom-up, so earlier edits never
+        invalidate the search text of later ones. Overlapping blocks are rejected.
+        """
+        outcomes: list[AppliedEdit | None] = [None] * len(edits)
         allowed_dirs = {str(PurePosixPath(a).parent) for a in allowed}
-        if rel not in allowed:
-            creating = current is None and op == "write_file"
-            if not (creating and str(PurePosixPath(rel).parent) in allowed_dirs):
-                return rejected("outside the allowed files")
+        blocks: dict[str, list[tuple[int, dict[str, Any], str]]] = {}
 
-        replace = unescape_literal_newlines(str(edit.get("replace", "")))
-        if op == "replace_block":
-            search = str(edit.get("search", ""))
-            if current is None:
-                return rejected("file does not exist; use WRITE to create it")
-            if not search.strip():
-                return rejected("empty search block")
-            found = _find_block(current, search)
-            if found is None:
-                count = current.count(search.rstrip("\n"))
-                if count > 1:
-                    return rejected(f"search block occurs {count} times; make it unique")
-                return rejected("search block not found verbatim in file")
-            replacement = replace if found.endswith("\n") else replace.rstrip("\n")
-            originals.setdefault(rel, current)
-            _write(workspace, rel, current.replace(found, replacement, 1))
-        else:
+        for index, edit in enumerate(edits):
+            raw_path = str(edit.get("path", ""))
+            op = str(edit.get("op", ""))
+            justification = str(edit.get("justification", ""))
+            evidence = str(edit.get("evidence_url", ""))
+
+            def rejected(reason: str) -> AppliedEdit:
+                return AppliedEdit(raw_path, op, justification, evidence, "rejected", reason)
+
+            rel = _clean_path(raw_path)
+            if rel is None:
+                outcomes[index] = rejected("invalid path")
+                continue
+            if op not in ("replace_block", "write_file"):
+                outcomes[index] = rejected(f"unknown op {op!r}")
+                continue
+            current = _read(workspace, rel)
+            if rel not in allowed:
+                creating = current is None and op == "write_file"
+                if not (creating and str(PurePosixPath(rel).parent) in allowed_dirs):
+                    outcomes[index] = rejected("outside the allowed files")
+                    continue
+            if op == "replace_block":
+                blocks.setdefault(rel, []).append((index, edit, rel))
+                continue
+
+            replace = unescape_literal_newlines(str(edit.get("replace", "")))
             if not replace.strip():
-                return rejected("WRITE with empty content")
+                outcomes[index] = rejected("WRITE with empty content")
+                continue
             if current is not None:
                 old_lines = current.count("\n") + 1
                 new_lines = replace.count("\n") + 1
                 if old_lines > 20 and new_lines < old_lines * SHRINK_LIMIT:
-                    return rejected(
+                    outcomes[index] = rejected(
                         f"WRITE would shrink {old_lines} lines to {new_lines}; looks truncated. "
                         "Use EDIT blocks or include the complete file"
                     )
+                    continue
             originals.setdefault(rel, current)
             _write(workspace, rel, replace)
-        return AppliedEdit(rel, op, justification, evidence, "applied")
+            outcomes[index] = AppliedEdit(rel, op, justification, evidence, "applied")
+
+        for rel, group in blocks.items():
+            content = _read(workspace, rel)
+            located: list[tuple[int, int, str, int]] = []  # start, end, replacement, index
+            for index, edit, _ in group:
+                justification = str(edit.get("justification", ""))
+                evidence = str(edit.get("evidence_url", ""))
+
+                def rejected(reason: str) -> AppliedEdit:
+                    return AppliedEdit(
+                        rel, "replace_block", justification, evidence, "rejected", reason
+                    )
+
+                search = str(edit.get("search", ""))
+                if content is None:
+                    outcomes[index] = rejected("file does not exist; use WRITE to create it")
+                    continue
+                if not search.strip():
+                    outcomes[index] = rejected("empty search block")
+                    continue
+                found = _find_block(content, search)
+                if found is None:
+                    count = content.count(search.rstrip("\n"))
+                    if count > 1:
+                        outcomes[index] = rejected(
+                            f"search block occurs {count} times; make it unique"
+                        )
+                    else:
+                        outcomes[index] = rejected("search block not found verbatim in file")
+                    continue
+                start = content.index(found)
+                end = start + len(found)
+                if any(s < end and start < e for s, e, _, _ in located):
+                    outcomes[index] = rejected("overlaps another edit in the same response")
+                    continue
+                replace = unescape_literal_newlines(str(edit.get("replace", "")))
+                replacement = replace if found.endswith("\n") else replace.rstrip("\n")
+                located.append((start, end, replacement, index))
+            if content is None or not located:
+                continue
+            originals.setdefault(rel, content)
+            updated = content
+            for start, end, replacement, index in sorted(located, reverse=True):
+                updated = updated[:start] + replacement + updated[end:]
+                edit = edits[index]
+                outcomes[index] = AppliedEdit(
+                    rel, "replace_block", str(edit.get("justification", "")),
+                    str(edit.get("evidence_url", "")), "applied",
+                )
+            _write(workspace, rel, updated)
+
+        return [o for o in outcomes if o is not None]
 
     @staticmethod
     def _snapshot(workspace: Path, paths: list[str]) -> dict[str, str | None]:
@@ -638,10 +699,8 @@ class Surgeon:
                 log.warning("surgeon: output truncated (%d chars visible)", len(text))
 
             snapshot = self._snapshot(workspace, allowed)
-            applied: list[AppliedEdit] = []
-            for edit in data["edits"]:
-                outcome = self.apply_edit(workspace, allowed, edit, originals)
-                applied.append(outcome)
+            applied = self.apply_edits(workspace, allowed, data["edits"], originals)
+            for outcome in applied:
                 if outcome.status == "rejected":
                     await self._emit(
                         run_id, EventType.PATCH_REJECTED, node, attempt=number,
