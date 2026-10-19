@@ -242,6 +242,10 @@ class Supervisor:
                     if a.verification else "not verified"
                 )
                 + (f" (rolled back: {a.rollback_reason})" if a.rolled_back else "")
+                + (
+                    f" | first error: {_error_line(a.verification['failures'][0]['message'])[:140]}"
+                    if a.verification and a.verification.get("failures") else ""
+                )
                 for a in surgery.attempts
             ],
         )

@@ -234,7 +234,7 @@ async def test_edit_loop_applies_rejects_succeeds(tmp_path: Path, catalog: Model
     assert verifier.labels == ["pydantic: after version bump", "pydantic: attempt 1"]
 
     request = completions.requests[0]
-    assert "response_format" not in request and request["max_tokens"] == 16_000
+    assert "response_format" not in request and request["max_tokens"] == 24_000
     assert "### EDIT" in request["messages"][0]["content"]
     prompt = request["messages"][1]["content"]
     assert "=== pyshop/settings.py ===" in prompt and "=== secrets.py ===" not in prompt
@@ -290,7 +290,7 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
         return response("try", write_block("pyshop/settings.py", content))
 
     outputs = [rewrite("WORSE = 1\n"), rewrite("SAME = 1\n"), rewrite("PROGRESS = 1\n")]
-    surgeon, _ = make_surgeon(catalog, outputs, verifier, bus)
+    surgeon, completions = make_surgeon(catalog, outputs, verifier, bus)
     surgeon.max_attempts = 4
     outputs.append(rewrite("GOOD = 1\n"))
     result = await surgeon.upgrade(ws, dep(), dossier(), run_id=run.id)
@@ -299,6 +299,11 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
     reasons = [a.rollback_reason for a in result.attempts]
     assert reasons[0].startswith("worse: 1 passing, 2 failing")
     assert "same failures" in reasons[1]
+    # after the rollback the next prompt explains what was changed and what it caused
+    second_prompt = completions.requests[1]["messages"][1]["content"]
+    assert "ROLLED BACK" in second_prompt
+    assert "What that attempt changed:" in second_prompt and "pyshop/settings.py: j" in second_prompt
+    assert "What it caused (do NOT repeat this):" in second_prompt and "t::b" in second_prompt
     assert reasons[2] == "" and not result.attempts[2].rolled_back  # different failure: progress
     assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
     models = [a.model for a in result.attempts]

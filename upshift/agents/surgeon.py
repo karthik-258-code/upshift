@@ -494,9 +494,21 @@ class Surgeon:
                 parts += [f"- {e.path} [{e.op}]: {e.reason}" for e in rejected]
             if previous.rolled_back:
                 parts.append(
-                    f"The previous attempt was rolled back: {previous.rollback_reason}. "
+                    f"The previous attempt was ROLLED BACK: {previous.rollback_reason}. "
                     "The files below are back to their pre-attempt state."
                 )
+                touched = [
+                    f"- {e.path}: {e.justification}" for e in previous.edits
+                    if e.status == "applied"
+                ]
+                if touched:
+                    parts.append("What that attempt changed:")
+                    parts += touched
+                failures = (previous.verification or {}).get("failures", [])
+                if failures:
+                    parts.append("What it caused (do NOT repeat this):")
+                    for failure in failures[:3]:
+                        parts.append(f"--- {failure.get('test', '')}\n{failure.get('message', '')[:1200]}")
         parts += api_surface_text(verification.api_surface)
         parts += ["", "Files you may edit (full contents, exact text):"]
         remaining = MAX_CONTEXT_CHARS
