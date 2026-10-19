@@ -36,8 +36,21 @@ from upshift.tools.pypi import PyPIClient
 log = logging.getLogger(__name__)
 
 MAX_CONTEXT_CHARS = 120_000
-MAX_OUTPUT_TOKENS = 16_000
+MAX_OUTPUT_TOKENS = 24_000
 MAX_FAILURES_SHOWN = 12
+WARNING_CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
+
+
+def warnings_are_errors(workspace: Path) -> str | None:
+    """Return the config file that promotes warnings to errors, if any."""
+    for name in WARNING_CONFIGS:
+        path = workspace / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "filterwarnings" in text and re.search(r"\berror\b", text):
+            return name
+    return None
 SHRINK_LIMIT = 0.3  # a rewrite keeping <30% of a >20-line file is almost always truncation
 
 FORMAT_SPEC = """Respond in exactly this plain-text format. No JSON, no markdown fences.
@@ -449,10 +462,20 @@ class Surgeon:
             parts.append(
                 "\nNOTE: these are collection (import-time) errors. The modules fail to import, "
                 "so NO tests have run yet and the single error shown hides every other "
-                "incompatibility behind it. Do not fix just the line in the traceback: apply "
-                "EVERY relevant documented change above to every editable file in one pass "
-                "(imports, class definitions, decorators, config, method renames), so that the "
-                "modules import cleanly and the tests actually execute."
+                "incompatibility behind it. Patching one line per attempt will not converge. "
+                "For each module named in a traceback, produce ONE complete ### WRITE block "
+                "with the whole file rewritten for the new version: migrate every import, "
+                "base class, decorator, config object, field constraint and method name that "
+                "the documented changes above cover, in one pass, so the module imports "
+                "cleanly and the tests actually execute."
+            )
+        config = warnings_are_errors(workspace)
+        if config:
+            parts.append(
+                f"\nNOTE: this project promotes warnings to errors ({config}: filterwarnings). "
+                "Deprecated APIs that still 'work' in the new version are FAILURES here: every "
+                "deprecated usage listed above must be migrated to its replacement, not left in "
+                "place."
             )
         if len(verification.failures) > MAX_FAILURES_SHOWN:
             parts.append(f"... {len(verification.failures) - MAX_FAILURES_SHOWN} more")
@@ -612,7 +635,9 @@ class Surgeon:
         signatures = set()
         for failure in verification.failures:
             lines = [ln.strip() for ln in failure.message.splitlines() if ln.strip()]
-            error = next((ln for ln in reversed(lines) if ln.startswith("E ")), "")
+            # first E line = exception type and message; later E lines are often a generic
+            # docs URL that would make different errors look identical
+            error = next((ln for ln in lines if ln.startswith("E ")), "")
             signatures.add(f"{failure.test}|{error or (lines[0] if lines else '')}")
         return signatures
 

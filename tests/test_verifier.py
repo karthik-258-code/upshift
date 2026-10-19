@@ -111,7 +111,7 @@ async def test_verify_builds_structured_result(tmp_path: Path) -> None:
     assert not result.ok and result.phase == "test"
     assert (result.tests, result.passed, result.failure_count) == (4, 1, 2)
     assert result.referenced_files() == ["tests/test_models.py", "pyshop/settings.py"]
-    assert executor.requests[0].collect == [JUNIT_PATH]
+    assert executor.requests[0].collect == [JUNIT_PATH, API_PATH]
     types = [e.type for e in store.events(run.id)]
     assert types == [EventType.SANDBOX_STARTED, EventType.SANDBOX_FINISHED, EventType.TEST_RESULT]
     payload = store.events(run.id)[-1].payload

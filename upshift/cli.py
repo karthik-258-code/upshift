@@ -253,6 +253,10 @@ async def _run(
         )
         if dep.get("error"):
             print(f"       {dep['error']}")
+        for line in dep.get("attempt_log", []):
+            print(f"       attempt {line}")
+        for failure in dep.get("failures", []):
+            print(f"       still failing: {failure['test']}  {failure['error']}")
     return 0 if summary["succeeded"] or not summary["candidates"] else 1
 
 

@@ -331,6 +331,18 @@ async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelC
     assert [a.rolled_back for a in result.attempts] == [False, False, False]
 
 
+def test_warnings_as_errors_detection(tmp_path: Path) -> None:
+    from upshift.agents.surgeon import warnings_are_errors
+
+    assert warnings_are_errors(tmp_path) is None
+    (tmp_path / "pytest.ini").write_text("[pytest]\nfilterwarnings =\n    ignore::UserWarning\n")
+    assert warnings_are_errors(tmp_path) is None
+    (tmp_path / "pytest.ini").write_text(
+        "[pytest]\nfilterwarnings =\n    error::DeprecationWarning:pyshop\n"
+    )
+    assert warnings_are_errors(tmp_path) == "pytest.ini"
+
+
 async def test_unparsable_response_is_recorded(tmp_path: Path, catalog: ModelCatalog) -> None:
     ws = workspace(tmp_path)
     f1 = ("t::a", "pyshop/settings.py:1: boom")

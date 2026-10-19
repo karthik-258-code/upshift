@@ -76,9 +76,16 @@ class DependencyOutcome:
     merge_request: dict[str, Any] | None = None
     error: str | None = None
     diff: str = ""
+    failures: list[dict[str, str]] = field(default_factory=list)
+    attempt_log: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _error_line(message: str) -> str:
+    lines = [ln.strip() for ln in message.splitlines() if ln.strip()]
+    return next((ln for ln in lines if ln.startswith("E ")), lines[0] if lines else "")
 
 
 class Supervisor:
@@ -214,12 +221,29 @@ class Supervisor:
                         workspace, dep, dossier, surgery, run.id, budget
                     )
 
+        final = surgery.final or {}
         outcome = DependencyOutcome(
             name=dep.name, current=dep.current, target=dep.latest, success=surgery.success,
             files_changed=surgery.files_changed, attempts=len(surgery.attempts),
             review_verdict=review.verdict if review else None,
             review_findings=len(review.findings) if review else 0,
             error=surgery.error, diff=surgery.diff,
+            failures=[
+                {"test": f["test"], "error": _error_line(f["message"])[:200]}
+                for f in final.get("failures", [])[:10]
+            ],
+            attempt_log=[
+                f"{a.number}: {a.model.split('/')[-1]} "
+                f"{sum(e.status == 'applied' for e in a.edits)} applied/"
+                f"{sum(e.status == 'rejected' for e in a.edits)} rejected -> "
+                + (
+                    f"{a.verification.get('passed', 0)} passing, "
+                    f"{a.verification.get('failure_count', 0)} failing"
+                    if a.verification else "not verified"
+                )
+                + (f" (rolled back: {a.rollback_reason})" if a.rolled_back else "")
+                for a in surgery.attempts
+            ],
         )
         if surgery.success:
             draft = await Scribe(self.llm, self.router, self.bus).write(
