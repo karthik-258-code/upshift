@@ -78,8 +78,10 @@ async def prepare_workspace(source: str, base_dir: Path | None = None) -> Worksp
 
     local = Path(source.removeprefix("file://"))
     if local.is_dir():
+        # exclude only this copy's own destination: the source may itself be a workspace
+        # living under base_dir (the Supervisor copies the base checkout per dependency)
         await asyncio.to_thread(
-            shutil.copytree, local, target, ignore=_ignore_factory(base_dir or Path(tmp.name))
+            shutil.copytree, local, target, ignore=_ignore_factory(Path(tmp.name))
         )
         return Workspace(target, source, await _git_head(local), tmp)
 
