@@ -337,7 +337,9 @@ class Historian:
             "result), feature (new and optional), noise (unrelated). Set applies_to_repo=true "
             "when a change touches a listed symbol or any method, attribute, config option or "
             "import path of a listed class/module. Put the exact symbol names you can identify "
-            "in affected_symbols. List packages that must be newly installed in "
+            "in affected_symbols. The migration field must be a concrete code-level "
+            "instruction (old API -> new API, with the new import path if it changed), never a "
+            "URL; URLs belong in evidence_url. List packages that must be newly installed in "
             "requires_new_dependencies. Use an empty string for requires_python if unchanged.",
             "",
         ]

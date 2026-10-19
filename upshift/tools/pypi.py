@@ -56,7 +56,7 @@ class PyPIClient:
 
     async def info(self, name: str) -> PackageInfo | None:
         norm = normalize(name)
-        key = JsonCache.key("pypi.info", norm) if self._cache else None
+        key = JsonCache.key("pypi.info.v2", norm) if self._cache else None
         if key and self._cache is not None:
             hit = self._cache.get(key)
             if hit is not None:

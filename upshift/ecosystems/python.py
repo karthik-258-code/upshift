@@ -165,6 +165,36 @@ def discover(workspace: Path) -> list[Manifest]:
     return manifests
 
 
+PIN_PATTERN = re.compile(
+    r"(?P<prefix>(?<![\w.-])(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<extras>\[[^\]]*\])?\s*==\s*)"
+    r"(?P<version>[0-9][^\s,;\"']*)"
+)
+
+
+def bump_pin(text: str, name: str, new_version: str) -> tuple[str, bool]:
+    """Rewrite every `name==old` pin for this package (any spelling, optional extras).
+
+    Works on requirements files and on PEP 621 dependency strings inside pyproject.toml.
+    """
+    target = normalize(name)
+    changed = False
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal changed
+        if normalize(match.group("name")) != target:
+            return match.group(0)
+        changed = True
+        return f"{match.group('prefix')}{new_version}"
+
+    return PIN_PATTERN.sub(replace, text), changed
+
+
+def add_requirement(text: str, requirement: str) -> str:
+    """Append a requirement line to a requirements file, keeping a trailing newline."""
+    body = text if text.endswith("\n") or not text else text + "\n"
+    return f"{body}{requirement}\n"
+
+
 def iter_python_files(workspace: Path) -> list[Path]:
     files = []
     for path in sorted(workspace.rglob("*.py")):
