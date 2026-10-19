@@ -202,10 +202,17 @@ class Supervisor:
             reviewer = Reviewer(self.llm, self.router, self.executor, self.bus)
             review = await reviewer.review(workspace, dep, dossier, surgery, run.id, budget)
             if review.actionable:
-                await surgeon.polish(
+                polish = await surgeon.polish(
                     workspace, dep, dossier, surgery,
                     [asdict(f) for f in review.actionable], run.id, budget,
                 )
+                if polish is not None and not polish.rolled_back and any(
+                    e.status == "applied" for e in polish.edits
+                ):
+                    # the diff changed: the verdict in the MR must describe what ships
+                    review = await reviewer.review(
+                        workspace, dep, dossier, surgery, run.id, budget
+                    )
 
         outcome = DependencyOutcome(
             name=dep.name, current=dep.current, target=dep.latest, success=surgery.success,

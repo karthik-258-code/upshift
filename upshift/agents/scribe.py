@@ -119,20 +119,39 @@ class Scribe:
         review: ReviewReport | None,
         summary: str,
     ) -> str:
-        lines = [summary, "", "## What changed", ""]
+        lines: list[str] = []
+        if review is not None and review.blockers:
+            count = len(review.blockers)
+            lines += [
+                f"> **Draft: the reviewer found {count} blocking issue(s) (see Review below). "
+                "Do not merge until they are resolved.**",
+                "",
+            ]
+        lines += [summary, "", "## What changed", ""]
         lines += [f"- {change}" for change in surgery.manifest_changes]
-        edits = [
-            e for a in surgery.attempts for e in a.edits
-            if e.status == "applied" and not a.rolled_back
-        ]
-        if edits:
+        by_file: dict[str, list[Any]] = {}
+        for attempt in surgery.attempts:
+            if attempt.rolled_back:
+                continue
+            for edit in attempt.edits:
+                if edit.status == "applied" and edit.justification.strip():
+                    by_file.setdefault(edit.path, []).append(edit)
+        if by_file:
             lines += ["", "## Code changes and why", ""]
             lines.append("| File | Change | Evidence |")
             lines.append("| --- | --- | --- |")
-            for edit in edits:
-                evidence = f"[source]({edit.evidence_url})" if edit.evidence_url else ""
-                justification = edit.justification.replace("|", "/") or edit.op
-                lines.append(f"| `{edit.path}` | {justification} | {evidence} |")
+            for path, edits in by_file.items():
+                reasons: list[str] = []
+                urls: list[str] = []
+                for edit in edits:
+                    text = edit.justification.replace("|", "/").strip()
+                    if text not in reasons:
+                        reasons.append(text)
+                    if edit.evidence_url and edit.evidence_url not in urls:
+                        urls.append(edit.evidence_url)
+                change = "<br>".join(reasons[-4:])  # most recent justifications win
+                evidence = " ".join(f"[source]({u})" for u in urls[:3])
+                lines.append(f"| `{path}` | {change} | {evidence} |")
 
         if dossier.relevant:
             lines += ["", "## Documented changes that applied to this codebase", ""]
@@ -188,8 +207,11 @@ class Scribe:
         budget: Budget | None = None,
     ) -> MergeRequestDraft:
         summary = await self.summary(dep, dossier, surgery, run_id, budget)
+        title = self.title(dep)
+        if review is not None and review.blockers:
+            title = f"Draft: {title}"
         draft = MergeRequestDraft(
-            title=self.title(dep),
+            title=title,
             description=self.render(dep, dossier, surgery, review, summary),
             branch=self.branch(dep),
             commit_message=f"{self.title(dep)}\n\n{summary}",

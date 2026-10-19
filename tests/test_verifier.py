@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import json
+
 from upshift.agents.verifier import (
+    API_PATH,
     INSTALL_MARKER,
     JUNIT_PATH,
     Verifier,
@@ -70,6 +73,27 @@ def test_build_test_command(tmp_path: Path) -> None:
     assert "pip install -q -e ." in command
     assert INSTALL_MARKER in command and "--junitxml=.upshift/junit.xml" in command
     assert command.rstrip().endswith("exit $code")
+    assert "introspect.py" not in command
+
+    with_api = build_test_command(tmp_path, ["pydantic", "pydantic_settings"])
+    assert "python .upshift/introspect.py pydantic pydantic_settings > .upshift/api.json" in with_api
+    assert "importlib.import_module(name)" in with_api
+
+
+async def test_verify_parses_api_surface(tmp_path: Path) -> None:
+    api = {"pydantic": {"version": "2.14.1", "names": ["BaseModel", "ConfigDict", "RootModel"]}}
+    executor = FakeExecutor(
+        ExecutionResult(
+            0, f"{INSTALL_MARKER}\n17 passed", "", 5,
+            artifacts={API_PATH: json.dumps(api), JUNIT_PATH: "<testsuites/>"},
+        )
+    )
+    result = await Verifier(executor).verify(tmp_path, introspect=["pydantic"])
+    assert result.ok and result.api_surface == api
+    assert result.to_dict()["api_surface"] == {
+        "pydantic": {"version": "2.14.1", "name_count": 3},
+    }
+    assert executor.requests[0].collect == [JUNIT_PATH, API_PATH]
 
 
 async def test_verify_builds_structured_result(tmp_path: Path) -> None:

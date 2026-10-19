@@ -165,3 +165,16 @@ async def test_scribe_renders_auditable_description(catalog: ModelCatalog) -> No
 async def test_scribe_falls_back_without_llm() -> None:
     draft = await Scribe().write(dep(), dossier(), surgery(), None)
     assert draft.description.startswith("Upgrades `pydantic` from 1.10.13 to 2.9.2.")
+
+
+async def test_scribe_marks_draft_when_blockers_remain() -> None:
+    from upshift.agents.reviewer import Finding, ReviewReport
+
+    review = ReviewReport(
+        "request_changes", "weakened test",
+        [Finding("blocker", "weakened_test", "tests/test_models.py", "input changed")],
+    )
+    draft = await Scribe().write(dep(), dossier(), surgery(), review)
+    assert draft.title.startswith("Draft: chore(deps)")
+    assert draft.description.startswith("> **Draft: the reviewer found 1 blocking issue(s)")
+    assert "- [blocker] `tests/test_models.py` input changed" in draft.description
