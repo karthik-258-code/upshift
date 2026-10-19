@@ -245,7 +245,7 @@ async def test_edit_loop_applies_rejects_succeeds(tmp_path: Path, catalog: Model
     assert types.count(EventType.PATCH_REJECTED) == 4
 
 
-async def test_blocks_located_against_pre_edit_content(tmp_path: Path, catalog: ModelCatalog) -> None:
+async def test_blocks_located_against_original(tmp_path: Path, catalog: ModelCatalog) -> None:
     """Two edits whose search text comes from the same original file both apply."""
     ws = workspace(tmp_path)
     (ws / "pyshop" / "settings.py").write_text("a = 1\nb = 2\nc = 3\nd = 4\n")
@@ -259,7 +259,8 @@ async def test_blocks_located_against_pre_edit_content(tmp_path: Path, catalog: 
     surgeon, _ = make_surgeon(catalog, outputs, FakeVerifier([red(f1), green()]))
     result = await surgeon.upgrade(ws, dep(), dossier())
     assert result.success
-    assert (ws / "pyshop" / "settings.py").read_text() == "a = 10\nextra = True\nb = 2\nc = 30\nd = 4\n"
+    expected = "a = 10\nextra = True\nb = 2\nc = 30\nd = 4\n"
+    assert (ws / "pyshop" / "settings.py").read_text() == expected
     statuses = [(e.status, e.reason) for e in result.attempts[0].edits]
     assert statuses[:2] == [("applied", ""), ("applied", "")]
     assert "overlaps" in statuses[2][1]

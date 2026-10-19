@@ -238,6 +238,13 @@ class SurgeryResult:
         return asdict(self)
 
 
+def _outcome(edit: dict[str, Any], path: str, status: str, reason: str = "") -> AppliedEdit:
+    return AppliedEdit(
+        path, str(edit.get("op", "")), str(edit.get("justification", "")),
+        str(edit.get("evidence_url", "")), status, reason,
+    )
+
+
 def _clean_path(raw: str) -> str | None:
     path = raw.strip().strip("`'\"").replace("\\", "/")
     while path.startswith("./"):
@@ -457,84 +464,73 @@ class Surgeon:
         """
         outcomes: list[AppliedEdit | None] = [None] * len(edits)
         allowed_dirs = {str(PurePosixPath(a).parent) for a in allowed}
-        blocks: dict[str, list[tuple[int, dict[str, Any], str]]] = {}
+        blocks: dict[str, list[int]] = {}
 
         for index, edit in enumerate(edits):
             raw_path = str(edit.get("path", ""))
             op = str(edit.get("op", ""))
-            justification = str(edit.get("justification", ""))
-            evidence = str(edit.get("evidence_url", ""))
-
-            def rejected(reason: str) -> AppliedEdit:
-                return AppliedEdit(raw_path, op, justification, evidence, "rejected", reason)
-
             rel = _clean_path(raw_path)
             if rel is None:
-                outcomes[index] = rejected("invalid path")
+                outcomes[index] = _outcome(edit, raw_path, "rejected", "invalid path")
                 continue
             if op not in ("replace_block", "write_file"):
-                outcomes[index] = rejected(f"unknown op {op!r}")
+                outcomes[index] = _outcome(edit, rel, "rejected", f"unknown op {op!r}")
                 continue
             current = _read(workspace, rel)
             if rel not in allowed:
                 creating = current is None and op == "write_file"
                 if not (creating and str(PurePosixPath(rel).parent) in allowed_dirs):
-                    outcomes[index] = rejected("outside the allowed files")
+                    outcomes[index] = _outcome(edit, rel, "rejected", "outside the allowed files")
                     continue
             if op == "replace_block":
-                blocks.setdefault(rel, []).append((index, edit, rel))
+                blocks.setdefault(rel, []).append(index)
                 continue
 
             replace = unescape_literal_newlines(str(edit.get("replace", "")))
             if not replace.strip():
-                outcomes[index] = rejected("WRITE with empty content")
+                outcomes[index] = _outcome(edit, rel, "rejected", "WRITE with empty content")
                 continue
             if current is not None:
                 old_lines = current.count("\n") + 1
                 new_lines = replace.count("\n") + 1
                 if old_lines > 20 and new_lines < old_lines * SHRINK_LIMIT:
-                    outcomes[index] = rejected(
-                        f"WRITE would shrink {old_lines} lines to {new_lines}; looks truncated. "
-                        "Use EDIT blocks or include the complete file"
+                    outcomes[index] = _outcome(
+                        edit, rel, "rejected",
+                        f"WRITE would shrink {old_lines} lines to {new_lines}; looks "
+                        "truncated. Use EDIT blocks or include the complete file",
                     )
                     continue
             originals.setdefault(rel, current)
             _write(workspace, rel, replace)
-            outcomes[index] = AppliedEdit(rel, op, justification, evidence, "applied")
+            outcomes[index] = _outcome(edit, rel, "applied")
 
-        for rel, group in blocks.items():
+        for rel, indexes in blocks.items():
             content = _read(workspace, rel)
             located: list[tuple[int, int, str, int]] = []  # start, end, replacement, index
-            for index, edit, _ in group:
-                justification = str(edit.get("justification", ""))
-                evidence = str(edit.get("evidence_url", ""))
-
-                def rejected(reason: str) -> AppliedEdit:
-                    return AppliedEdit(
-                        rel, "replace_block", justification, evidence, "rejected", reason
-                    )
-
+            for index in indexes:
+                edit = edits[index]
                 search = str(edit.get("search", ""))
                 if content is None:
-                    outcomes[index] = rejected("file does not exist; use WRITE to create it")
+                    reason = "file does not exist; use WRITE to create it"
+                    outcomes[index] = _outcome(edit, rel, "rejected", reason)
                     continue
                 if not search.strip():
-                    outcomes[index] = rejected("empty search block")
+                    outcomes[index] = _outcome(edit, rel, "rejected", "empty search block")
                     continue
                 found = _find_block(content, search)
                 if found is None:
                     count = content.count(search.rstrip("\n"))
-                    if count > 1:
-                        outcomes[index] = rejected(
-                            f"search block occurs {count} times; make it unique"
-                        )
-                    else:
-                        outcomes[index] = rejected("search block not found verbatim in file")
+                    reason = (
+                        f"search block occurs {count} times; make it unique"
+                        if count > 1 else "search block not found verbatim in file"
+                    )
+                    outcomes[index] = _outcome(edit, rel, "rejected", reason)
                     continue
                 start = content.index(found)
                 end = start + len(found)
                 if any(s < end and start < e for s, e, _, _ in located):
-                    outcomes[index] = rejected("overlaps another edit in the same response")
+                    reason = "overlaps another edit in the same response"
+                    outcomes[index] = _outcome(edit, rel, "rejected", reason)
                     continue
                 replace = unescape_literal_newlines(str(edit.get("replace", "")))
                 replacement = replace if found.endswith("\n") else replace.rstrip("\n")
@@ -545,11 +541,7 @@ class Surgeon:
             updated = content
             for start, end, replacement, index in sorted(located, reverse=True):
                 updated = updated[:start] + replacement + updated[end:]
-                edit = edits[index]
-                outcomes[index] = AppliedEdit(
-                    rel, "replace_block", str(edit.get("justification", "")),
-                    str(edit.get("evidence_url", "")), "applied",
-                )
+                outcomes[index] = _outcome(edits[index], rel, "applied")
             _write(workspace, rel, updated)
 
         return [o for o in outcomes if o is not None]
