@@ -14,10 +14,30 @@ class WorkspaceError(RuntimeError):
     pass
 
 
-IGNORE = shutil.ignore_patterns(
+IGNORE_PATTERNS = shutil.ignore_patterns(
     ".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache",
+    ".ruff_cache", ".data", ".cache",
 )
+
+
+def _ignore_factory(exclude: Path | None):  # type: ignore[no-untyped-def]
+    """Pattern-based ignores plus a hard exclusion of the destination tree itself.
+
+    Without this, scanning a repo whose .data/ directory holds the workspaces would copy
+    the copy of the copy until the recursion limit.
+    """
+    resolved = exclude.resolve() if exclude is not None else None
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        ignored = set(IGNORE_PATTERNS(directory, names))
+        if resolved is not None:
+            for name in names:
+                candidate = (Path(directory) / name).resolve()
+                if candidate == resolved or resolved in candidate.parents:
+                    ignored.add(name)
+        return ignored
+
+    return ignore
 
 
 @dataclass
@@ -58,7 +78,9 @@ async def prepare_workspace(source: str, base_dir: Path | None = None) -> Worksp
 
     local = Path(source.removeprefix("file://"))
     if local.is_dir():
-        await asyncio.to_thread(shutil.copytree, local, target, ignore=IGNORE)
+        await asyncio.to_thread(
+            shutil.copytree, local, target, ignore=_ignore_factory(base_dir or Path(tmp.name))
+        )
         return Workspace(target, source, await _git_head(local), tmp)
 
     try:
