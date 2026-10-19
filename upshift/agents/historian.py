@@ -92,8 +92,8 @@ def window_changelog(
             break
         chunk = text[:remaining]
         newest.append(chunk)
-        remaining -= len(chunk)
-    return "\n\n".join([boundary, *newest])
+        remaining -= len(chunk) + 2
+    return "\n\n".join([boundary, *newest])[:cap]
 
 DOSSIER_SCHEMA: dict[str, Any] = {
     "type": "object",
