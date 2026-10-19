@@ -87,10 +87,16 @@ FENCE = re.compile(r"^```[\w+-]*\s*$")
 
 
 def unescape_literal_newlines(text: str) -> str:
-    """Repair content the model emitted with literal backslash-n instead of newlines."""
-    if "\n" in text or "\\n" not in text:
+    """Repair content the model emitted with literal backslash-n instead of newlines.
+
+    Only fires when the body is a single line holding two or more literal sequences, which
+    is the double-escaping signature and essentially never legitimate file content.
+    """
+    body = text.rstrip("\n")
+    if "\n" in body or body.count("\\n") < 2:
         return text
-    return text.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+    repaired = body.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+    return repaired + ("\n" if text.endswith("\n") else "")
 
 
 def _strip_fences(lines: list[str]) -> list[str]:
