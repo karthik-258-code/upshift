@@ -18,6 +18,8 @@ def client(tmp_path: Path) -> TestClient:
         tavily_api_key="",
         data_dir=tmp_path,
         cache_dir=tmp_path,
+        # keep tests independent of a locally generated config/capabilities.json
+        capabilities_file=tmp_path / "no-capabilities.json",
     )
     app = create_app(settings, store=EventStore(), background=False)
     return TestClient(app)
@@ -26,14 +28,15 @@ def client(tmp_path: Path) -> TestClient:
 def test_health(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["status"] == "ok" and body["nebius_configured"] is False
+    assert body["capabilities_probed"] is False
 
 
 def test_models_endpoint(client: TestClient) -> None:
     body = client.get("/api/models").json()
     keys = {m["key"] for m in body["models"]}
-    assert {"nano", "super", "ultra"} <= keys
-    nano = next(m for m in body["models"] if m["key"] == "nano")
-    assert nano["input_price_per_m"] == 0.06 and "tool_calling" in nano["capabilities"]
+    assert {"lightning", "nano", "super", "ultra"} <= keys
+    super_ = next(m for m in body["models"] if m["key"] == "super")
+    assert super_["input_price_per_m"] == 0.30 and "json_schema" in super_["capabilities"]
 
 
 def test_create_run_records_lifecycle(client: TestClient) -> None:

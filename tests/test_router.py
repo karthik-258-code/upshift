@@ -7,18 +7,16 @@ from upshift.llm.models import ModelCatalog
 from upshift.llm.router import BudgetExhausted, ModelRouter, NoCapableModel, TaskClass
 
 
-def test_cheap_tasks_go_to_nano(catalog: ModelCatalog) -> None:
+def test_cheap_tasks_prefer_lightning(catalog: ModelCatalog) -> None:
     router = ModelRouter(catalog)
-    for task in (TaskClass.CLASSIFY, TaskClass.RANK, TaskClass.TRIAGE):
-        assert router.route(task).model.key == "nano"
-
-
-def test_long_ingestion_prefers_lightning_when_unprobed(catalog: ModelCatalog) -> None:
-    assert ModelRouter(catalog).route(TaskClass.INGEST_LONG).model.key == "lightning"
+    for task in (TaskClass.CLASSIFY, TaskClass.RANK, TaskClass.TRIAGE, TaskClass.INGEST_LONG):
+        assert router.route(task).model.key == "lightning"
 
 
 def test_unverified_model_is_skipped_after_probe(probed_catalog: ModelCatalog) -> None:
-    assert ModelRouter(probed_catalog).route(TaskClass.INGEST_LONG).model.key == "nano"
+    router = ModelRouter(probed_catalog)
+    assert router.route(TaskClass.CLASSIFY).model.key == "nano"
+    assert router.route(TaskClass.INGEST_LONG).model.key == "nano"
 
 
 def test_codegen_escalation_ladder(catalog: ModelCatalog) -> None:

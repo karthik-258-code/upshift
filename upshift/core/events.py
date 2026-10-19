@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     RUN_STARTED = "run.started"
     RUN_FINISHED = "run.finished"
     RUN_FAILED = "run.failed"
@@ -52,7 +52,7 @@ class Event(BaseModel):
         return f"id: {self.seq}\nevent: {self.type.value}\ndata: {self.model_dump_json()}\n\n"
 
 
-class RunStatus(str, Enum):
+class RunStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     SUCCEEDED = "succeeded"

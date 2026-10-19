@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from upshift.core.budget import Budget
 
 from .models import ModelCatalog, ModelSpec
 
 
-class TaskClass(str, Enum):
+class TaskClass(StrEnum):
     CLASSIFY = "classify"
     RANK = "rank"
     TRIAGE = "triage"
@@ -22,14 +22,16 @@ class TaskClass(str, Enum):
 
 
 # Ordered candidate lists per attempt (1-based). The last list repeats for later attempts.
+# Tier 0 prefers Nemotron 3.5 Lightning: Nano pricing, 1M context, and it passed every
+# capability probe. Nano remains a fallback until its Token Factory ID is confirmed.
 POLICY: dict[TaskClass, list[list[str]]] = {
-    TaskClass.CLASSIFY: [["nano", "lightning", "super"]],
-    TaskClass.RANK: [["nano", "lightning", "super"]],
-    TaskClass.TRIAGE: [["nano", "lightning", "super"]],
+    TaskClass.CLASSIFY: [["lightning", "nano", "super"]],
+    TaskClass.RANK: [["lightning", "nano", "super"]],
+    TaskClass.TRIAGE: [["lightning", "nano", "super"]],
     TaskClass.INGEST_LONG: [["lightning", "nano", "super"]],
     TaskClass.CODEGEN: [["super", "ultra"], ["super", "ultra"], ["ultra", "super"]],
     TaskClass.REVIEW: [["ultra", "super"]],
-    TaskClass.WRITE: [["super", "nano"]],
+    TaskClass.WRITE: [["super", "lightning", "nano"]],
 }
 
 

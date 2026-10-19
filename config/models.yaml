@@ -2,27 +2,29 @@
 # IDs, prices and context sizes come from research-brief.md (Token Factory public pricing).
 # Change values here, never in code. Run `python scripts/probe_models.py` to verify real
 # capabilities per model; it writes config/capabilities.json which the router treats as truth.
+# Probe on 2026-10-19: lightning, super and ultra passed every capability; the nano ID below
+# returned 404. Run `python scripts/probe_models.py --list` to find the correct Nano ID.
 base_url: https://api.tokenfactory.us-central1.nebius.com/v1/
 
 models:
-  nano:
-    id: nvidia/nvidia-nemotron-3-nano-30b-a3b
-    tier: 0
-    context_tokens: 262000
-    input_price_per_m: 0.06
-    output_price_per_m: 0.24
-    documented_capabilities: [chat, tool_calling, json_object]
-    notes: Classification, ranking, triage, routine tool selection.
-
   lightning:
     id: nvidia/Nemotron-3_5-Lightning
     tier: 0
     context_tokens: 1024000
     input_price_per_m: 0.06
     output_price_per_m: 0.24
+    documented_capabilities: [chat, tool_calling, parallel_tool_calls, json_object, json_schema]
+    notes: Primary tier-0 model. Nano pricing, 1M context. Classification, ranking, triage, long changelog ingestion.
+
+  nano:
+    id: nvidia/nvidia-nemotron-3-nano-30b-a3b
+    tier: 0
+    context_tokens: 262000
+    input_price_per_m: 0.06
+    output_price_per_m: 0.24
     optional: true
-    documented_capabilities: [chat]
-    notes: 1M context at Nano pricing. Used for long changelog ingestion once the probe confirms it.
+    documented_capabilities: [chat, tool_calling, json_object]
+    notes: Fallback tier-0 model. ID from the brief returned 404 on 2026-10-19; confirm with probe --list.
 
   super:
     id: nvidia/nemotron-3-super-120b-a12b
@@ -30,7 +32,7 @@ models:
     context_tokens: 256000
     input_price_per_m: 0.30
     output_price_per_m: 0.90
-    documented_capabilities: [chat, tool_calling, json_object]
+    documented_capabilities: [chat, tool_calling, parallel_tool_calls, json_object, json_schema]
     notes: Code generation (attempts 1-2), MR writing, complex tool use.
 
   ultra:
@@ -39,5 +41,5 @@ models:
     context_tokens: 1024000
     input_price_per_m: 1.00
     output_price_per_m: 3.00
-    documented_capabilities: [chat, tool_calling]
+    documented_capabilities: [chat, tool_calling, parallel_tool_calls, json_object, json_schema]
     notes: Third-attempt patches with whole-repo context and final adversarial review.

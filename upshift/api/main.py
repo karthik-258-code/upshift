@@ -74,7 +74,9 @@ async def noop_launcher(run: Run, ctx: AppContext) -> None:
         )
     )
     ctx.store.set_status(run.id, RunStatus.SUCCEEDED, mode="noop")
-    await ctx.bus.publish(Event(run_id=run.id, type=EventType.RUN_FINISHED, payload={"status": "noop"}))
+    await ctx.bus.publish(
+        Event(run_id=run.id, type=EventType.RUN_FINISHED, payload={"status": "noop"})
+    )
 
 
 def create_app(
@@ -95,7 +97,12 @@ def create_app(
         if not usage.run_id:
             return
         await bus.publish(
-            Event(run_id=usage.run_id, type=EventType.LLM_CALL, agent=usage.agent, payload=usage.as_dict())
+            Event(
+                run_id=usage.run_id,
+                type=EventType.LLM_CALL,
+                agent=usage.agent,
+                payload=usage.as_dict(),
+            )
         )
         for pct in usage.budget_thresholds_crossed:
             await bus.publish(

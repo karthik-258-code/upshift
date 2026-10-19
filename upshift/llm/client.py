@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 import random
@@ -51,7 +52,7 @@ SleepFn = Callable[[float], Awaitable[None]]
 
 
 class TokenFactoryClient:
-    """SDK retries are disabled so backoff, Retry-After and accounting live here and are testable."""
+    """SDK retries are disabled so backoff, Retry-After and accounting live here, testably."""
 
     def __init__(
         self,
@@ -92,7 +93,11 @@ class TokenFactoryClient:
         budget: Budget | None = None,
         **extra: Any,
     ) -> ChatCompletion:
-        kwargs: dict[str, Any] = {"model": spec.id, "messages": messages, "temperature": temperature}
+        kwargs: dict[str, Any] = {
+            "model": spec.id,
+            "messages": messages,
+            "temperature": temperature,
+        }
         if tools:
             kwargs["tools"] = tools
         if tool_choice is not None:
@@ -116,7 +121,11 @@ class TokenFactoryClient:
                 retries += 1
                 log.warning(
                     "token factory %s on %s; retry %d/%d in %.2fs",
-                    type(exc).__name__, spec.id, retries, self.max_retries, delay,
+                    type(exc).__name__,
+                    spec.id,
+                    retries,
+                    self.max_retries,
+                    delay,
                 )
                 await self._sleep(delay)
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -154,10 +163,8 @@ class TokenFactoryClient:
         response = getattr(exc, "response", None)
         header = response.headers.get("retry-after") if response is not None else None
         if header:
-            try:
+            with contextlib.suppress(ValueError):
                 delay = max(delay, float(header))
-            except ValueError:
-                pass
         return delay
 
 

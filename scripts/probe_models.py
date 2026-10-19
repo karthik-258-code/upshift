@@ -4,8 +4,9 @@
 Writes config/capabilities.json, which the router then treats as the truth. Each probe
 uses tiny prompts; a full run costs a few cents at most. Requires NEBIUS_API_KEY.
 
-    python scripts/probe_models.py            # all models
-    python scripts/probe_models.py --only nano,super
+    python scripts/probe_models.py               # all models
+    python scripts/probe_models.py --only nano    # one model, merged into the existing file
+    python scripts/probe_models.py --list         # list model IDs visible to this account
 """
 
 from __future__ import annotations
@@ -93,7 +94,10 @@ def probe_json_object(client: OpenAI, model: str) -> bool:
         messages=[
             {
                 "role": "user",
-                "content": 'Return a JSON object with keys "status" ("ok") and "count" (3). JSON only.',
+                "content": (
+                    'Return a JSON object with keys "status" ("ok") and "count" (3). '
+                    "Output JSON only."
+                ),
             }
         ],
         response_format={"type": "json_object"},
@@ -123,18 +127,42 @@ PROBES: dict[str, Callable[[OpenAI, str], bool]] = {
 assert tuple(PROBES) == CAPABILITIES
 
 
+def list_models(client: OpenAI, needle: str = "nemotron") -> int:
+    print(f"Model IDs visible to this account containing '{needle}':")
+    found = 0
+    for model in client.models.list():
+        if needle in model.id.lower():
+            print(f"  {model.id}")
+            found += 1
+    if not found:
+        print("  (none; try --needle with another substring)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only", help="comma-separated model keys (default: all)")
-    parser.add_argument("--out", type=Path, help="output path (default: settings.capabilities_file)")
+    parser.add_argument(
+        "--out", type=Path, help="output path (default: settings.capabilities_file)"
+    )
+    parser.add_argument("--list", action="store_true", help="list available model IDs and exit")
+    parser.add_argument("--needle", default="nemotron", help="substring filter for --list")
     args = parser.parse_args()
 
     settings = get_settings()
     if not settings.nebius_api_key:
         print("NEBIUS_API_KEY is not set (put it in .env).", file=sys.stderr)
         return 2
+    client = OpenAI(
+        api_key=settings.nebius_api_key,
+        base_url=settings.nebius_base_url,
+        timeout=90,
+        max_retries=1,
+    )
+    if args.list:
+        return list_models(client, args.needle.lower())
+
     catalog = ModelCatalog.load(settings.models_file)
-    client = OpenAI(api_key=settings.nebius_api_key, base_url=settings.nebius_base_url, timeout=90, max_retries=1)
     keys = args.only.split(",") if args.only else list(catalog.models)
 
     results: dict[str, Any] = {}
@@ -157,7 +185,8 @@ def main() -> int:
                 notes[cap] = f"{type(exc).__name__}: {exc}"[:300]
             latency[cap] = int((time.perf_counter() - started) * 1000)
             flags[cap] = ok
-            print(f"  {cap:<20} {'PASS' if ok else 'FAIL':<4} {latency[cap]:>6} ms  {notes.get(cap, '')}")
+            verdict = "PASS" if ok else "FAIL"
+            print(f"  {cap:<20} {verdict:<4} {latency[cap]:>6} ms  {notes.get(cap, '')}")
         results[spec.id] = {**flags, "latency_ms": latency, "notes": notes}
 
     out = args.out or settings.capabilities_file

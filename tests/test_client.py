@@ -91,7 +91,9 @@ async def test_gives_up_after_max_retries(catalog: ModelCatalog) -> None:
         return None
 
     fake = _fake_client([_rate_limit(), _rate_limit(), _rate_limit()])
-    client = TokenFactoryClient("k", "https://example.test/v1/", client=fake, max_retries=2, sleep=fake_sleep)
+    client = TokenFactoryClient(
+        "k", "https://example.test/v1/", client=fake, max_retries=2, sleep=fake_sleep
+    )
     with pytest.raises(openai.RateLimitError):
         await client.complete(catalog.models["nano"], [{"role": "user", "content": "hi"}])
     assert fake.chat.completions.calls == 3

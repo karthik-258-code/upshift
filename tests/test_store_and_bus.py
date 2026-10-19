@@ -18,7 +18,7 @@ def test_append_assigns_sequence_per_run() -> None:
     assert [e.seq for e in store.events(run.id)] == [1, 2]
     assert store.events(run.id, after_seq=1)[0].payload == {"m": 1}
     assert store.get_run("missing") is None
-    assert [r.id for r in store.list_runs()][:2] == [other.id, run.id] or len(store.list_runs()) == 2
+    assert {r.id for r in store.list_runs()} == {run.id, other.id}
 
 
 def test_set_status_merges_summary() -> None:
