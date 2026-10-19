@@ -50,6 +50,34 @@ class LLMUsage:
 UsageHook = Callable[[LLMUsage], Awaitable[None] | None]
 SleepFn = Callable[[float], Awaitable[None]]
 
+THINKING_DIRECTIVES = {"no_think": "/no_think", "detailed_thinking_off": "detailed thinking off"}
+
+
+def apply_thinking_control(
+    control: str, messages: list[dict[str, Any]], kwargs: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Switch hidden reasoning off using whichever mechanism the probe found for this model.
+
+    Reasoning tokens count against max_tokens; left on, a long structured answer gets cut
+    off with finish_reason=length and little or no visible content.
+    """
+    if control == "chat_template_kwargs":
+        body = dict(kwargs.get("extra_body") or {})
+        template = dict(body.get("chat_template_kwargs") or {})
+        template["enable_thinking"] = False
+        body["chat_template_kwargs"] = template
+        kwargs["extra_body"] = body
+        return messages
+    directive = THINKING_DIRECTIVES.get(control)
+    if not directive:
+        return messages
+    copied = [dict(m) for m in messages]
+    if copied and copied[0].get("role") == "system":
+        copied[0]["content"] = f"{directive}\n{copied[0].get('content', '')}"
+    else:
+        copied.insert(0, {"role": "system", "content": directive})
+    return copied
+
 
 class TokenFactoryClient:
     """SDK retries are disabled so backoff, Retry-After and accounting live here, testably."""
@@ -91,13 +119,10 @@ class TokenFactoryClient:
         run_id: str | None = None,
         attempt: int = 1,
         budget: Budget | None = None,
+        thinking: bool = False,
         **extra: Any,
     ) -> ChatCompletion:
-        kwargs: dict[str, Any] = {
-            "model": spec.id,
-            "messages": messages,
-            "temperature": temperature,
-        }
+        kwargs: dict[str, Any] = {"model": spec.id, "temperature": temperature}
         if tools:
             kwargs["tools"] = tools
         if tool_choice is not None:
@@ -107,6 +132,9 @@ class TokenFactoryClient:
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         kwargs.update(extra)
+        if not thinking and spec.thinking_control:
+            messages = apply_thinking_control(spec.thinking_control, messages, kwargs)
+        kwargs["messages"] = messages
 
         retries = 0
         started = time.perf_counter()

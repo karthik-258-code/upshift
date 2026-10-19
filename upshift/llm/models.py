@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
 
 CAPABILITIES = ("chat", "tool_calling", "parallel_tool_calls", "json_object", "json_schema")
+# How to switch a model's hidden reasoning off for structured-output calls. Discovered by
+# scripts/probe_models.py and stored under models.<id>.thinking.control in capabilities.json.
+THINKING_CONTROLS = ("chat_template_kwargs", "no_think", "detailed_thinking_off")
 
 
 @dataclass(frozen=True)
@@ -22,6 +25,7 @@ class ModelSpec:
     documented_capabilities: frozenset[str]
     optional: bool = False
     notes: str = ""
+    thinking_control: str = ""  # one of THINKING_CONTROLS, or "" when not needed/unknown
 
     def cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         return (
@@ -54,14 +58,20 @@ class ModelCatalog:
                 documented_capabilities=frozenset(m.get("documented_capabilities", ["chat"])),
                 optional=bool(m.get("optional", False)),
                 notes=str(m.get("notes", "")),
+                thinking_control=str(m.get("thinking_control", "")),
             )
         verified = None
         if capabilities_file is not None and Path(capabilities_file).exists():
             data = json.loads(Path(capabilities_file).read_text(encoding="utf-8"))
+            probed = data.get("models", {})
             verified = {
                 model_id: {c: bool(v) for c, v in caps.items() if c in CAPABILITIES}
-                for model_id, caps in data.get("models", {}).items()
+                for model_id, caps in probed.items()
             }
+            for key, spec in list(models.items()):
+                control = str((probed.get(spec.id, {}).get("thinking") or {}).get("control", ""))
+                if not spec.thinking_control and control in THINKING_CONTROLS:
+                    models[key] = replace(spec, thinking_control=control)
         return cls(base_url=raw.get("base_url", ""), models=models, verified=verified)
 
     @property

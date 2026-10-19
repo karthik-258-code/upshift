@@ -22,9 +22,9 @@ from upshift.agents.scout import DependencyAssessment
 from upshift.core.budget import Budget
 from upshift.core.bus import EventBus
 from upshift.core.events import Event, EventType, utcnow
-from upshift.llm.client import TokenFactoryClient, content_of
+from upshift.llm.client import TokenFactoryClient
 from upshift.llm.router import ModelRouter, TaskClass
-from upshift.llm.structured import json_schema_format, parse_json
+from upshift.llm.structured import complete_json
 from upshift.tools.tavily_extract import TavilyExtractTool
 from upshift.tools.tavily_search import TavilySearchTool
 
@@ -380,32 +380,12 @@ class Historian:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
-        response = await self.llm.complete(
-            decision.model, messages,
-            response_format=json_schema_format("impact_dossier", DOSSIER_SCHEMA),
-            temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS,
-            agent=self.agent, run_id=run_id, budget=budget,
+        data = await complete_json(
+            self.llm, decision.model, messages, schema_name="impact_dossier",
+            schema=DOSSIER_SCHEMA, max_tokens=MAX_OUTPUT_TOKENS, agent=self.agent,
+            run_id=run_id, budget=budget,
         )
-        finish = response.choices[0].finish_reason if response.choices else None
-        text = content_of(response)
-        try:
-            return parse_json(text), decision.model.id
-        except ValueError as exc:
-            log.warning(
-                "historian: unparsable output (%s); finish_reason=%s chars=%d preview=%r; "
-                "retrying with json_object",
-                exc, finish, len(text), text[:200],
-            )
-            messages.append({"role": "assistant", "content": text or "(empty)"})
-            messages.append(
-                {"role": "user", "content": f"That was not valid JSON ({exc}). Return only JSON."}
-            )
-            response = await self.llm.complete(
-                decision.model, messages, response_format={"type": "json_object"},
-                temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS,
-                agent=self.agent, run_id=run_id, budget=budget, attempt=2,
-            )
-            return parse_json(content_of(response)), decision.model.id
+        return data, decision.model.id
 
     # ---- orchestration ------------------------------------------------------
 

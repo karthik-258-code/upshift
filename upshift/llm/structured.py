@@ -60,6 +60,16 @@ async def complete_json(
         data = parse_json(text)
     except ValueError as exc:
         finish = response.choices[0].finish_reason if response.choices else None
+        if finish == "length" and max_tokens < 32_000:
+            bigger = min(max_tokens * 2, 32_000)
+            log.warning(
+                "%s: output truncated at %d tokens (%d chars visible); retrying with %d",
+                agent, max_tokens, len(text), bigger,
+            )
+            return await complete_json(
+                llm, model, messages, schema_name=schema_name, schema=schema,
+                max_tokens=bigger, agent=agent, run_id=run_id, budget=budget, attempt=attempt,
+            )
         log.warning(
             "%s: unparsable output (%s); finish_reason=%s chars=%d; retrying with json_object",
             agent, exc, finish, len(text),

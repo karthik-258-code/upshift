@@ -86,8 +86,10 @@ def discover_requirements(workspace: Path) -> list[str]:
 
 def has_installable_project(workspace: Path) -> bool:
     pyproject = workspace / "pyproject.toml"
-    if pyproject.exists() and "[project]" in pyproject.read_text(encoding="utf-8", errors="replace"):
-        return True
+    if pyproject.exists():
+        text = pyproject.read_text(encoding="utf-8", errors="replace")
+        if "[project]" in text:
+            return True
     return (workspace / "setup.py").exists()
 
 

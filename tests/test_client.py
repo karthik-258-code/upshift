@@ -99,6 +99,29 @@ async def test_gives_up_after_max_retries(catalog: ModelCatalog) -> None:
     assert fake.chat.completions.calls == 3
 
 
+async def test_thinking_control_is_applied(catalog: ModelCatalog) -> None:
+    from dataclasses import replace
+
+    fake = _fake_client([])
+    client = TokenFactoryClient("k", "https://example.test/v1/", client=fake)
+    messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
+
+    spec = replace(catalog.models["super"], thinking_control="chat_template_kwargs")
+    await client.complete(spec, messages)
+    sent = fake.chat.completions.last_kwargs
+    assert sent["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
+    assert sent["messages"] == messages
+
+    spec = replace(catalog.models["super"], thinking_control="no_think")
+    await client.complete(spec, messages)
+    sent = fake.chat.completions.last_kwargs
+    assert sent["messages"][0] == {"role": "system", "content": "/no_think\nsys"}
+    assert messages[0]["content"] == "sys"  # caller's list untouched
+
+    await client.complete(spec, [{"role": "user", "content": "hi"}], thinking=True)
+    assert fake.chat.completions.last_kwargs["messages"][0]["role"] == "user"
+
+
 async def test_optional_arguments_are_forwarded(catalog: ModelCatalog) -> None:
     fake = _fake_client([])
     client = TokenFactoryClient("k", "https://example.test/v1/", client=fake)

@@ -117,6 +117,46 @@ def probe_json_schema(client: OpenAI, model: str) -> bool:
     return isinstance(data.get("status"), str) and isinstance(data.get("count"), int)
 
 
+def _thinks(client: OpenAI, model: str, messages: list[dict[str, Any]], **extra: Any) -> bool:
+    """True when the model spends tokens on hidden reasoning before answering."""
+    r = client.chat.completions.create(
+        model=model, messages=messages, max_tokens=24, temperature=0, **extra
+    )
+    message = r.choices[0].message
+    extras = getattr(message, "model_extra", None) or {}
+    reasoning = extras.get("reasoning_content") or extras.get("reasoning") or ""
+    content = (message.content or "").strip()
+    return bool(reasoning) or (r.choices[0].finish_reason == "length" and not content)
+
+
+def probe_thinking(client: OpenAI, model: str) -> dict[str, Any]:
+    """Detect hidden reasoning and find a switch that turns it off."""
+    task = [{"role": "user", "content": "What is 17 * 23? Reply with just the number."}]
+    detected = _thinks(client, model, task)
+    control = "none"
+    notes = ""
+    if detected:
+        candidates: list[tuple[str, dict[str, Any]]] = [
+            ("chat_template_kwargs", {
+                "messages": task,
+                "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+            }),
+            ("no_think", {"messages": [{"role": "system", "content": "/no_think"}, *task]}),
+            ("detailed_thinking_off", {
+                "messages": [{"role": "system", "content": "detailed thinking off"}, *task],
+            }),
+        ]
+        control = "unknown"
+        for name, kwargs in candidates:
+            try:
+                if not _thinks(client, model, **kwargs):
+                    control = name
+                    break
+            except Exception as exc:  # noqa: BLE001
+                notes += f"{name}: {type(exc).__name__}; "
+    return {"detected": detected, "control": control, "notes": notes.strip()}
+
+
 PROBES: dict[str, Callable[[OpenAI, str], bool]] = {
     "chat": probe_chat,
     "tool_calling": probe_tool_calling,
@@ -187,7 +227,15 @@ def main() -> int:
             flags[cap] = ok
             verdict = "PASS" if ok else "FAIL"
             print(f"  {cap:<20} {verdict:<4} {latency[cap]:>6} ms  {notes.get(cap, '')}")
-        results[spec.id] = {**flags, "latency_ms": latency, "notes": notes}
+        thinking: dict[str, Any] = {"detected": False, "control": "unknown", "notes": ""}
+        if flags.get("chat"):
+            try:
+                thinking = probe_thinking(client, spec.id)
+            except Exception as exc:  # noqa: BLE001
+                thinking["notes"] = f"{type(exc).__name__}: {exc}"[:300]
+        state = "ON" if thinking["detected"] else "off"
+        print(f"  {'reasoning':<20} {state:<4}        switch: {thinking['control']}  {thinking['notes']}")
+        results[spec.id] = {**flags, "latency_ms": latency, "notes": notes, "thinking": thinking}
 
     out = args.out or settings.capabilities_file
     existing: dict[str, Any] = {}

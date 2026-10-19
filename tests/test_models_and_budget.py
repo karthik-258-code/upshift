@@ -18,6 +18,21 @@ def test_cost_uses_published_prices(catalog: ModelCatalog) -> None:
     assert catalog.models["ultra"].cost(500_000, 100_000) == pytest.approx(0.5 + 0.3)
 
 
+def test_thinking_control_loaded_from_probe(tmp_path, catalog: ModelCatalog) -> None:
+    import json
+
+    from tests.conftest import MODELS_FILE
+
+    data = {"models": {catalog.models["super"].id: {
+        "chat": True, "thinking": {"detected": True, "control": "chat_template_kwargs"},
+    }}}
+    path = tmp_path / "caps.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    loaded = ModelCatalog.load(MODELS_FILE, path)
+    assert loaded.models["super"].thinking_control == "chat_template_kwargs"
+    assert loaded.models["ultra"].thinking_control == ""
+
+
 def test_probe_results_override_documented_caps(probed_catalog: ModelCatalog) -> None:
     assert probed_catalog.probed
     assert "json_schema" in probed_catalog.capabilities("ultra")
