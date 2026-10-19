@@ -17,8 +17,9 @@ def _client(calls: list[tuple[str, str, dict]], branch_taken: bool = False) -> G
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content) if request.content else {}
         calls.append((request.method, request.url.path, body or dict(request.url.params)))
-        path = request.url.path
-        if path.endswith("/projects/group%2Frepo"):
+        path = request.url.path  # httpx returns this percent-decoded
+        if path.endswith("/projects/group/repo"):
+            assert "group%2Frepo" in request.url.raw_path.decode()
             return httpx.Response(200, json={"id": 42, "default_branch": "main"})
         if path.endswith("/repository/branches"):
             if branch_taken and request.url.params["branch"] == "upshift/pydantic-2.9.2":
