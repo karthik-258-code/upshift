@@ -84,7 +84,7 @@ async def _research(source: str, package: str, as_json: bool) -> int:
     historian = Historian(
         llm, ModelRouter(catalog),
         TavilySearchTool(settings.tavily_api_key, cache=tavily_cache),
-        TavilyExtractTool(settings.tavily_api_key, cache=tavily_cache),
+        TavilyExtractTool(settings.tavily_api_key, cache=tavily_cache, max_chars=400_000),
     )
     dossier = await historian.research(dep, budget=Budget(settings.default_budget_usd))
 

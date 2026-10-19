@@ -13,7 +13,9 @@ PYDANTIC = {
         "summary": "Data validation using Python type hints",
         "requires_python": ">=3.8",
         "project_urls": {
-            "Homepage": "https://github.com/pydantic/pydantic",
+            "Funding": "https://github.com/sponsors/samuelcolvin",
+            "Homepage": "https://docs.pydantic.dev/",
+            "Source": "https://github.com/pydantic/pydantic/",
             "Changelog": "https://docs.pydantic.dev/latest/changelog/",
         },
     },

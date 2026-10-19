@@ -18,7 +18,10 @@ log = logging.getLogger(__name__)
 
 PYPI_URL = "https://pypi.org/pypi/{name}/json"
 CHANGELOG_HINT = re.compile(r"change|release|history|news|whatsnew|migration", re.IGNORECASE)
-REPO_HINT = re.compile(r"https?://(github|gitlab)\.com/[^/]+/[^/#?]+", re.IGNORECASE)
+REPO_HINT = re.compile(
+    r"https?://(?:github|gitlab)\.com/(?!sponsors/|orgs/|features/)[^/#?]+/[^/#?]+", re.IGNORECASE
+)
+REPO_KEY_HINT = re.compile(r"source|repo|code|github|gitlab", re.IGNORECASE)
 
 
 @dataclass
@@ -104,7 +107,13 @@ class PyPIClient:
         changelog = next((v for k, v in urls.items() if CHANGELOG_HINT.search(k)), None)
         if changelog is None:
             changelog = next((v for v in urls.values() if CHANGELOG_HINT.search(v)), None)
-        repo = next((v for v in urls.values() if REPO_HINT.match(v)), None)
+        ranked = sorted(urls.items(), key=lambda kv: 0 if REPO_KEY_HINT.search(kv[0]) else 1)
+        repo = None
+        for _, value in ranked:
+            match = REPO_HINT.match(value)
+            if match:
+                repo = match.group(0).removesuffix(".git")
+                break
 
         return PackageInfo(
             name=name,

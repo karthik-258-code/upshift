@@ -11,9 +11,10 @@ and is never executed or treated as instructions.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from packaging.version import InvalidVersion, Version
 
@@ -32,7 +33,67 @@ log = logging.getLogger(__name__)
 CATEGORIES = ("breaking", "deprecation", "behavior", "feature", "noise")
 ACTIONABLE = frozenset({"breaking", "deprecation", "behavior"})
 MAX_SOURCES = 5
-MAX_TOTAL_CHARS = 200_000
+MAX_TOTAL_CHARS = 160_000
+PER_SOURCE_CHARS = 80_000
+MAX_OUTPUT_TOKENS = 12_000
+VERSION_TOKEN = re.compile(r"\bv?(\d+\.\d+(?:\.\d+)?)\b")
+HEADING_LINE = re.compile(r"^\s{0,3}(?:#{1,6}\s|v?\d+\.\d+)")
+
+
+def normalize_url(url: str) -> str:
+    parsed = urlparse(url.strip())
+    path = parsed.path.rstrip("/") or "/"
+    return urlunparse((parsed.scheme, parsed.netloc.lower(), path, "", parsed.query, ""))
+
+
+def _parse_version(text: str) -> Version | None:
+    try:
+        return Version(text)
+    except InvalidVersion:
+        return None
+
+
+def window_changelog(
+    content: str, current: str | None, target: str | None, cap: int = PER_SOURCE_CHARS
+) -> str:
+    """Keep only the changelog sections for versions in (current, target].
+
+    Changelogs are newest-first and can run to hundreds of thousands of characters; the
+    breaking changes that matter sit at the boundary version (e.g. 2.0), far from the top.
+    When the kept sections still exceed the cap, the boundary section is kept in full and
+    the remainder is filled from the newest releases.
+    """
+    low = _parse_version(current or "")
+    high = _parse_version(target or "")
+    if low is None or high is None:
+        return content[:cap]
+
+    sections: list[tuple[Version | None, list[str]]] = [(None, [])]
+    for line in content.splitlines():
+        version = None
+        if HEADING_LINE.match(line):
+            match = VERSION_TOKEN.search(line)
+            version = _parse_version(match.group(1)) if match else None
+        if version is not None:
+            sections.append((version, [line]))
+        else:
+            sections[-1][1].append(line)
+
+    kept = [(v, "\n".join(lines)) for v, lines in sections if v is not None and low < v <= high]
+    if sum(len(text) for _, text in kept) < 1_500:
+        return content[:cap]
+
+    kept.sort(key=lambda item: item[0])
+    boundary = kept[0][1][: cap // 2]
+    remaining = cap - len(boundary)
+    newest: list[str] = []
+    for _, text in reversed(kept[1:]):
+        if remaining <= 0:
+            break
+        chunk = text[:remaining]
+        newest.append(chunk)
+        remaining -= len(chunk)
+    return "\n\n".join([boundary, *newest])
 
 DOSSIER_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -138,9 +199,10 @@ def symbol_matches(hint: str, used: set[str]) -> list[str]:
     hits = []
     for symbol in used:
         lowered = symbol.lower()
-        if lowered == cleaned or lowered.endswith("." + cleaned) or cleaned.endswith("." + lowered):
-            hits.append(symbol)
-        elif lowered.rsplit(".", 1)[-1] == last and len(last) > 3:
+        exact = lowered == cleaned
+        nested = lowered.endswith("." + cleaned) or cleaned.endswith("." + lowered)
+        same_leaf = lowered.rsplit(".", 1)[-1] == last and len(last) > 3
+        if exact or nested or same_leaf:
             hits.append(symbol)
     return sorted(set(hits))
 
@@ -200,9 +262,12 @@ class Historian:
         seen: set[str] = set()
 
         def add(url: str | None, via: str, title: str = "") -> None:
-            if not url or url in seen or len(sources) >= MAX_SOURCES:
+            if not url or len(sources) >= MAX_SOURCES:
                 return
-            seen.add(url)
+            key = normalize_url(url)
+            if key in seen:
+                return
+            seen.add(key)
             sources.append(EvidenceSource(url=url, via=via, title=title))
 
         add(dep.changelog_url, "pypi", "Changelog (PyPI metadata)")
@@ -277,11 +342,15 @@ class Historian:
             "",
         ]
         remaining = MAX_TOTAL_CHARS
-        for index, source in enumerate(sources, start=1):
+        # migration guides first: they are written for exactly this task
+        ordered = sorted(
+            sources, key=lambda s: 0 if "migrat" in (s.url + s.title).lower() else 1
+        )
+        for index, source in enumerate(ordered, start=1):
             content = contents.get(source.url)
             if not content:
                 continue
-            chunk = content[:remaining]
+            chunk = window_changelog(content, dep.current, dep.latest)[:remaining]
             remaining -= len(chunk)
             parts.append(f"=== SOURCE {index}: {source.url} ===")
             parts.append(chunk)
@@ -312,19 +381,27 @@ class Historian:
         response = await self.llm.complete(
             decision.model, messages,
             response_format=json_schema_format("impact_dossier", DOSSIER_SCHEMA),
-            temperature=0.0, agent=self.agent, run_id=run_id, budget=budget,
+            temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS,
+            agent=self.agent, run_id=run_id, budget=budget,
         )
+        finish = response.choices[0].finish_reason if response.choices else None
+        text = content_of(response)
         try:
-            return parse_json(content_of(response)), decision.model.id
+            return parse_json(text), decision.model.id
         except ValueError as exc:
-            log.warning("historian: schema output unparsable (%s); retrying with json_object", exc)
-            messages.append({"role": "assistant", "content": content_of(response)})
+            log.warning(
+                "historian: unparsable output (%s); finish_reason=%s chars=%d preview=%r; "
+                "retrying with json_object",
+                exc, finish, len(text), text[:200],
+            )
+            messages.append({"role": "assistant", "content": text or "(empty)"})
             messages.append(
                 {"role": "user", "content": f"That was not valid JSON ({exc}). Return only JSON."}
             )
             response = await self.llm.complete(
                 decision.model, messages, response_format={"type": "json_object"},
-                temperature=0.0, agent=self.agent, run_id=run_id, budget=budget, attempt=2,
+                temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS,
+                agent=self.agent, run_id=run_id, budget=budget, attempt=2,
             )
             return parse_json(content_of(response)), decision.model.id
 
@@ -393,5 +470,7 @@ class Historian:
         ]
         dossier.model = model_id
         dossier.cost_usd = round(self.llm.total_cost_usd - cost_before, 6)
+        if not entries:
+            dossier.error = "model returned no change entries"
         await self._emit(run_id, EventType.DOSSIER_READY, node, **dossier.to_dict())
         return dossier

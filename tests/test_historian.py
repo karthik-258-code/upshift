@@ -9,7 +9,13 @@ from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
-from upshift.agents.historian import DOSSIER_SCHEMA, Historian, symbol_matches
+from upshift.agents.historian import (
+    DOSSIER_SCHEMA,
+    Historian,
+    normalize_url,
+    symbol_matches,
+    window_changelog,
+)
 from upshift.agents.scout import DependencyAssessment
 from upshift.core.budget import Budget
 from upshift.core.bus import EventBus
@@ -35,7 +41,7 @@ MODEL_OUTPUT = {
             "category": "breaking",
             "affected_symbols": ["pydantic.BaseSettings"],
             "versions": "2.0",
-            "migration": "pip install pydantic-settings; from pydantic_settings import BaseSettings",
+            "migration": "pip install pydantic-settings; import from pydantic_settings",
             "evidence_url": MIGRATION,
             "quote": "BaseSettings has moved to the pydantic-settings package.",
             "applies_to_repo": True,
@@ -162,6 +168,30 @@ def test_symbol_matches() -> None:
     assert symbol_matches("", used) == []
 
 
+def test_normalize_url_dedupes_trailing_slash() -> None:
+    assert normalize_url("https://Docs.pydantic.dev/latest/changelog/") == normalize_url(
+        "https://docs.pydantic.dev/latest/changelog#top"
+    )
+
+
+def test_window_changelog_keeps_boundary_and_newest() -> None:
+    sections = [f"## v{v} (2024-01-01)\n" + f"notes for {v} " * 40 for v in (
+        "2.14.1", "2.14.0", "2.5.0", "2.0.0", "1.10.13", "1.10.0", "0.1",
+    )]
+    content = "# Changelog\nintro\n\n" + "\n\n".join(sections)
+    windowed = window_changelog(content, "1.10.13", "2.14.1", cap=2_000)
+    assert windowed.startswith("## v2.0.0")  # boundary release first
+    assert "v2.14.1" in windowed  # newest fills the remainder
+    assert "v1.10.13" not in windowed and "v0.1" not in windowed
+    assert len(windowed) <= 2_000
+
+
+def test_window_changelog_falls_back_to_head() -> None:
+    plain = "No version headings here. " * 100
+    assert window_changelog(plain, "1.0", "2.0", cap=50) == plain[:50]
+    assert window_changelog("## v3.0\nx", None, "3.0", cap=5) == "## v3"
+
+
 def test_parse_json_tolerates_fences_and_prose() -> None:
     assert parse_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert parse_json('Here you go: {"a": [1, 2]} thanks') == {"a": [1, 2]}
@@ -217,6 +247,7 @@ async def test_research_builds_dossier(catalog: ModelCatalog) -> None:
 
     request = completions.requests[0]
     assert request["response_format"]["type"] == "json_schema"
+    assert request["max_tokens"] == 12_000
     prompt = request["messages"][1]["content"]
     assert "pydantic.BaseSettings (x2)" in prompt and "=== SOURCE 1:" in prompt
     assert "stackoverflow" not in prompt
