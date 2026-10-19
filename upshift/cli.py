@@ -78,7 +78,9 @@ async def _research(source: str, package: str, as_json: bool) -> int:
         settings.nebius_api_key, settings.nebius_base_url,
         timeout=settings.llm_timeout_seconds, max_retries=settings.llm_max_retries,
     )
-    tavily_cache = JsonCache(settings.cache_dir / "tavily", ttl_hours=settings.tavily_cache_ttl_hours)
+    tavily_cache = JsonCache(
+        settings.cache_dir / "tavily", ttl_hours=settings.tavily_cache_ttl_hours
+    )
     historian = Historian(
         llm, ModelRouter(catalog),
         TavilySearchTool(settings.tavily_api_key, cache=tavily_cache),

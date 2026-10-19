@@ -120,7 +120,9 @@ class FakeCompletions:
             id="x", object="chat.completion", created=0, model=kwargs["model"],
             choices=[Choice(index=0, finish_reason="stop",
                             message=ChatCompletionMessage(role="assistant", content=text))],
-            usage=CompletionUsage(prompt_tokens=40_000, completion_tokens=1_500, total_tokens=41_500),
+            usage=CompletionUsage(
+                prompt_tokens=40_000, completion_tokens=1_500, total_tokens=41_500
+            ),
         )
 
 
@@ -180,11 +182,11 @@ def test_schema_is_strict_everywhere() -> None:
     check(DOSSIER_SCHEMA)
 
 
-async def test_research_builds_dossier(probed_catalog: ModelCatalog) -> None:
+async def test_research_builds_dossier(catalog: ModelCatalog) -> None:
     store = EventStore()
     bus = EventBus(store)
     run = store.create_run(Run(repo_url="x"))
-    historian, completions = _historian([json.dumps(MODEL_OUTPUT)], probed_catalog, bus)
+    historian, completions = _historian([json.dumps(MODEL_OUTPUT)], catalog, bus)
     budget = Budget(cap_usd=2.0)
 
     dossier = await historian.research(_dep(), run_id=run.id, budget=budget)
@@ -199,8 +201,7 @@ async def test_research_builds_dossier(probed_catalog: ModelCatalog) -> None:
     assert dossier.error is None
     assert dossier.requires_new_dependencies == ["pydantic-settings"]
     assert dossier.cost_usd > 0 and budget.spent_usd == pytest.approx(dossier.cost_usd)
-    # probed catalog has no Lightning, so INGEST_LONG with json_schema falls to nano
-    assert dossier.model == probed_catalog.models["ultra"].id or dossier.model
+    assert dossier.model == catalog.models["lightning"].id  # long-ingestion tier
 
     titles = [e.title for e in dossier.entries]
     relevant = [e.title for e in dossier.relevant]
@@ -227,16 +228,16 @@ async def test_research_builds_dossier(probed_catalog: ModelCatalog) -> None:
     assert types[-1] is EventType.DOSSIER_READY
 
 
-async def test_research_retries_on_bad_json(probed_catalog: ModelCatalog) -> None:
+async def test_research_retries_on_bad_json(catalog: ModelCatalog) -> None:
     historian, completions = _historian(
-        ["Sure! Here is some text without JSON", json.dumps(MODEL_OUTPUT)], probed_catalog
+        ["Sure! Here is some text without JSON", json.dumps(MODEL_OUTPUT)], catalog
     )
     dossier = await historian.research(_dep())
     assert dossier.error is None and len(dossier.entries) == 5
     assert completions.requests[1]["response_format"] == {"type": "json_object"}
 
 
-async def test_research_without_evidence(probed_catalog: ModelCatalog) -> None:
+async def test_research_without_evidence(catalog: ModelCatalog) -> None:
     class Nothing:
         def search(self, **_: Any) -> dict[str, Any]:
             return {"results": []}
@@ -250,7 +251,7 @@ async def test_research_without_evidence(probed_catalog: ModelCatalog) -> None:
         client=SimpleNamespace(chat=SimpleNamespace(completions=completions)),
     )
     historian = Historian(
-        llm, ModelRouter(probed_catalog), TavilySearchTool(client=Nothing()),
+        llm, ModelRouter(catalog), TavilySearchTool(client=Nothing()),
         TavilyExtractTool(client=Nothing()),
     )
     dossier = await historian.research(_dep())

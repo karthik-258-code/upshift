@@ -193,9 +193,10 @@ class Historian:
 
     async def gather(
         self, dep: DependencyAssessment, run_id: str | None
-    ) -> tuple[list[EvidenceSource], list[str]]:
+    ) -> tuple[list[EvidenceSource], list[str], dict[str, str]]:
         node = f"dep:{dep.name}"
         sources: list[EvidenceSource] = []
+        contents: dict[str, str] = {}
         seen: set[str] = set()
 
         def add(url: str | None, via: str, title: str = "") -> None:
@@ -219,7 +220,10 @@ class Historian:
             )
             ranked = sorted(
                 result.get("results", []),
-                key=lambda r: (urlparse(r.get("url", "")).netloc not in preferred, -(r.get("score") or 0)),
+                key=lambda r: (
+                    urlparse(r.get("url", "")).netloc not in preferred,
+                    -(r.get("score") or 0),
+                ),
             )
             for item in ranked[:3]:
                 add(item.get("url"), "search", item.get("title", ""))
@@ -234,17 +238,22 @@ class Historian:
                     source.fetched = True
                     source.chars = page.get("chars", len(page["content"]))
                     source.truncated = bool(page.get("truncated"))
-                    source._content = page["content"]  # type: ignore[attr-defined]
+                    contents[source.url] = page["content"]
                 else:
                     source.error = failed.get(source.url, extracted.get("error", "no content"))
                 await self._emit(
                     run_id, EventType.EVIDENCE_FETCHED, node, **asdict(source),
                 )
-        return sources, queries
+        return sources, queries, contents
 
     # ---- classification -----------------------------------------------------
 
-    def build_prompt(self, dep: DependencyAssessment, sources: list[EvidenceSource]) -> str:
+    def build_prompt(
+        self,
+        dep: DependencyAssessment,
+        sources: list[EvidenceSource],
+        contents: dict[str, str],
+    ) -> str:
         symbols = dep.usage.get("symbols", {})
         symbol_lines = "\n".join(f"- {s} (x{n})" for s, n in symbols.items()) or "- (none found)"
         files = ", ".join(dep.usage.get("files", [])) or "(none)"
@@ -269,7 +278,7 @@ class Historian:
         ]
         remaining = MAX_TOTAL_CHARS
         for index, source in enumerate(sources, start=1):
-            content = getattr(source, "_content", None)
+            content = contents.get(source.url)
             if not content:
                 continue
             chunk = content[:remaining]
@@ -285,10 +294,11 @@ class Historian:
         self,
         dep: DependencyAssessment,
         sources: list[EvidenceSource],
+        contents: dict[str, str],
         run_id: str | None,
         budget: Budget | None,
     ) -> tuple[dict[str, Any], str]:
-        prompt = self.build_prompt(dep, sources)
+        prompt = self.build_prompt(dep, sources, contents)
         decision = self.router.route(
             TaskClass.INGEST_LONG,
             required_caps={"json_schema"},
@@ -328,7 +338,7 @@ class Historian:
     ) -> ImpactDossier:
         node = f"dep:{dep.name}"
         cost_before = self.llm.total_cost_usd
-        sources, queries = await self.gather(dep, run_id)
+        sources, queries, contents = await self.gather(dep, run_id)
         dossier = ImpactDossier(
             package=dep.name, current=dep.current, target=dep.latest,
             sources=sources, search_queries=queries, entries=[],
@@ -339,7 +349,7 @@ class Historian:
             return dossier
 
         try:
-            raw, model_id = await self.classify(dep, sources, run_id, budget)
+            raw, model_id = await self.classify(dep, sources, contents, run_id, budget)
         except Exception as exc:  # noqa: BLE001 - surfaced as a dossier error event
             log.exception("historian classification failed for %s", dep.name)
             dossier.error = f"{type(exc).__name__}: {exc}"
