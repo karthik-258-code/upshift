@@ -283,7 +283,7 @@ async def test_edit_loop_applies_rejects_succeeds(tmp_path: Path, catalog: Model
     assert verifier.labels == ["pydantic: after version bump", "pydantic: attempt 1"]
 
     request = completions.requests[0]
-    assert "response_format" not in request and request["max_tokens"] == 24_000
+    assert "response_format" not in request and request["max_tokens"] == 32_000  # endgame
     assert "### EDIT" in request["messages"][0]["content"]
     prompt = request["messages"][1]["content"]
     assert "=== pyshop/settings.py ===" in prompt and "=== secrets.py ===" not in prompt
@@ -385,9 +385,12 @@ async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelC
     assert [a.rolled_back for a in result.attempts] == [False, False, False]
     # collection errors: whole-module guidance, normal budget; once collected: deep mode
     first = completions.requests[0]
-    assert first["max_tokens"] == 24_000 and "SURGICAL MODE" not in first["messages"][1]["content"]
+    assert first["max_tokens"] == 24_000
+    assert "SURGICAL MODE" not in first["messages"][1]["content"]
     assert "collection (import-time) errors" in first["messages"][1]["content"]
-    assert completions.requests[2]["max_tokens"] == 32_000
+    third = completions.requests[2]  # 13 passing / 4 failing: surgical, not yet endgame
+    assert third["max_tokens"] == 24_000
+    assert "SURGICAL MODE" in third["messages"][1]["content"]
 
 
 def test_error_line_cleaning() -> None:
