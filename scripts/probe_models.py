@@ -118,20 +118,39 @@ def probe_json_schema(client: OpenAI, model: str) -> bool:
 
 
 def _thinks(client: OpenAI, model: str, messages: list[dict[str, Any]], **extra: Any) -> bool:
-    """True when the model spends tokens on hidden reasoning before answering."""
+    """True when the model spends tokens on hidden reasoning before answering.
+
+    Three signals, any of which counts: an exposed reasoning field, a length cut-off with
+    nothing visible, or far more completion tokens billed than the visible answer needs.
+    """
     r = client.chat.completions.create(
-        model=model, messages=messages, max_tokens=24, temperature=0, **extra
+        model=model, messages=messages, max_tokens=400, temperature=0, **extra
     )
     message = r.choices[0].message
     extras = getattr(message, "model_extra", None) or {}
     reasoning = extras.get("reasoning_content") or extras.get("reasoning") or ""
     content = (message.content or "").strip()
-    return bool(reasoning) or (r.choices[0].finish_reason == "length" and not content)
+    billed = r.usage.completion_tokens if r.usage else 0
+    details = getattr(r.usage, "completion_tokens_details", None) if r.usage else None
+    reasoning_tokens = getattr(details, "reasoning_tokens", 0) or 0
+    visible = max(len(content) // 3, 1)
+    hidden = billed > visible * 3 + 40
+    return bool(reasoning) or reasoning_tokens > 0 or hidden or (
+        r.choices[0].finish_reason == "length" and not content
+    )
 
 
 def probe_thinking(client: OpenAI, model: str) -> dict[str, Any]:
     """Detect hidden reasoning and find a switch that turns it off."""
-    task = [{"role": "user", "content": "What is 17 * 23? Reply with just the number."}]
+    task = [{
+        "role": "user",
+        "content": (
+            "A library renamed .dict() to .model_dump() and moved BaseSettings to a separate "
+            "package. A project imports BaseSettings and calls .dict() in 3 files. Return a "
+            "JSON object with keys files_to_change (integer) and new_dependency (string). "
+            "Output only the JSON."
+        ),
+    }]
     detected = _thinks(client, model, task)
     control = "none"
     notes = ""

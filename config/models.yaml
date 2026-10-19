@@ -14,6 +14,8 @@ models:
     input_price_per_m: 0.06
     output_price_per_m: 0.24
     documented_capabilities: [chat, tool_calling, parallel_tool_calls, json_object, json_schema]
+    # Reasons only on harder prompts, which a trivial probe misses; same serving stack as Nano.
+    thinking_control: chat_template_kwargs
     notes: Primary tier-0 model. Nano pricing, 1M context. Classification, ranking, triage, long changelog ingestion.
 
   nano:
