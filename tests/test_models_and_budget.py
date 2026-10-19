@@ -8,7 +8,8 @@ from upshift.llm.models import ModelCatalog
 
 def test_catalog_loads_all_tiers(catalog: ModelCatalog) -> None:
     assert {"nano", "lightning", "super", "ultra"} <= set(catalog.models)
-    assert catalog.models["nano"].id == "nvidia/nvidia-nemotron-3-nano-30b-a3b"
+    assert catalog.models["nano"].id == "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    assert catalog.models["lightning"].context_tokens == 1_024_000
     assert not catalog.probed
 
 
