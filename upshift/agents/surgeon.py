@@ -390,7 +390,7 @@ class Surgeon:
         previous: Attempt | None,
         run_id: str | None,
     ) -> list[str]:
-        """Search the web for the specific errors blocking progress. Used after a stalled attempt."""
+        """Search the web for the specific errors blocking progress (after a stalled attempt)."""
         if self.search is None:
             return []
         major = (dep.latest or "").split(".")[0]
