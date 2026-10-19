@@ -290,14 +290,14 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
 async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelCatalog) -> None:
     """One collection error hiding 17 tests -> 17 collected with 4 failing is progress."""
     ws = workspace(tmp_path)
-    masked = VerificationResult(
-        ok=False, phase="test", exit_code=2, duration_ms=1, tests=1, passed=0, errors=1,
-        failures=[TestFailure("tests.test_models", "pyshop/models.py:9: in <module>\nE ImportError", "error")],
-    )
-    changed_error = VerificationResult(
-        ok=False, phase="test", exit_code=2, duration_ms=1, tests=1, passed=0, errors=1,
-        failures=[TestFailure("tests.test_models", "pyshop/models.py:30: in <module>\nE TypeError", "error")],
-    )
+    def collection_error(message: str) -> VerificationResult:
+        return VerificationResult(
+            ok=False, phase="test", exit_code=2, duration_ms=1, tests=1, passed=0, errors=1,
+            failures=[TestFailure("tests.test_models", message, "error")],
+        )
+
+    masked = collection_error("pyshop/models.py:9: in <module>\nE ImportError")
+    changed_error = collection_error("pyshop/models.py:30: in <module>\nE TypeError")
     partial = VerificationResult(
         ok=False, phase="test", exit_code=1, duration_ms=1, tests=17, passed=13, failed=4,
         failures=[TestFailure(f"t::{i}", "tests/test_models.py:1: E x") for i in range(4)],
