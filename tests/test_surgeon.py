@@ -302,8 +302,10 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
     # after the rollback the next prompt explains what was changed and what it caused
     second_prompt = completions.requests[1]["messages"][1]["content"]
     assert "ROLLED BACK" in second_prompt
-    assert "What that attempt changed:" in second_prompt and "pyshop/settings.py: j" in second_prompt
-    assert "What it caused (do NOT repeat this):" in second_prompt and "t::b" in second_prompt
+    assert "What that attempt changed:" in second_prompt
+    assert "pyshop/settings.py: j" in second_prompt
+    assert "What it caused (do NOT repeat this):" in second_prompt
+    assert "t::b" in second_prompt
     assert reasons[2] == "" and not result.attempts[2].rolled_back  # different failure: progress
     assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
     models = [a.model for a in result.attempts]

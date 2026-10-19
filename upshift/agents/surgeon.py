@@ -508,7 +508,8 @@ class Surgeon:
                 if failures:
                     parts.append("What it caused (do NOT repeat this):")
                     for failure in failures[:3]:
-                        parts.append(f"--- {failure.get('test', '')}\n{failure.get('message', '')[:1200]}")
+                        message = str(failure.get("message", ""))[:1200]
+                        parts.append(f"--- {failure.get('test', '')}\n{message}")
         parts += api_surface_text(verification.api_surface)
         parts += ["", "Files you may edit (full contents, exact text):"]
         remaining = MAX_CONTEXT_CHARS
