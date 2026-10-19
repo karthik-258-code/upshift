@@ -1,5 +1,5 @@
 {
-  "probed_at": "2026-10-19T14:51:57.849747+00:00",
+  "probed_at": "2026-10-19T15:34:55.708631+00:00",
   "base_url": "https://api.tokenfactory.us-central1.nebius.com/v1/",
   "models": {
     "nvidia/nvidia-nemotron-3-nano-30b-a3b": {
@@ -24,20 +24,18 @@
       "tool_calling": true,
       "parallel_tool_calls": true,
       "json_object": true,
-      "json_schema": false,
+      "json_schema": true,
       "latency_ms": {
-        "chat": 3197,
-        "tool_calling": 855,
-        "parallel_tool_calls": 1066,
-        "json_object": 1588,
-        "json_schema": 2137
+        "chat": 1939,
+        "tool_calling": 1011,
+        "parallel_tool_calls": 940,
+        "json_object": 1688,
+        "json_schema": 1788
       },
-      "notes": {
-        "json_schema": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
-      },
+      "notes": {},
       "thinking": {
-        "detected": false,
-        "control": "none",
+        "detected": true,
+        "control": "chat_template_kwargs",
         "notes": ""
       }
     },
@@ -68,16 +66,16 @@
       "json_object": true,
       "json_schema": true,
       "latency_ms": {
-        "chat": 473,
-        "tool_calling": 734,
-        "parallel_tool_calls": 785,
-        "json_object": 1120,
-        "json_schema": 525
+        "chat": 460,
+        "tool_calling": 542,
+        "parallel_tool_calls": 568,
+        "json_object": 580,
+        "json_schema": 485
       },
       "notes": {},
       "thinking": {
-        "detected": false,
-        "control": "none",
+        "detected": true,
+        "control": "chat_template_kwargs",
         "notes": ""
       }
     },
