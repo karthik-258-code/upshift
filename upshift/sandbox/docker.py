@@ -30,7 +30,9 @@ class DockerExecutor:
 
     async def available(self) -> bool:
         try:
-            code, _, _ = await self._docker("version", "--format", "{{.Server.Version}}", timeout=20)
+            code, _, _ = await self._docker(
+                "version", "--format", "{{.Server.Version}}", timeout=20
+            )
         except (OSError, TimeoutError):
             return False
         return code == 0

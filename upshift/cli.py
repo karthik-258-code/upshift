@@ -32,8 +32,12 @@ async def _scout(source: str, as_json: bool) -> int:
         print(json.dumps(report.to_dict(), indent=2))
         return 0
 
-    print(f"manifests: {', '.join(report.manifests) or 'none'}   python files: {report.python_files}")
-    header = f"{'package':<24}{'current':<12}{'latest':<12}{'bump':<8}{'syms':>5}{'files':>6}{'risk':>6}  note"
+    manifests = ", ".join(report.manifests) or "none"
+    print(f"manifests: {manifests}   python files: {report.python_files}")
+    header = (
+        f"{'package':<24}{'current':<12}{'latest':<12}{'bump':<8}"
+        f"{'syms':>5}{'files':>6}{'risk':>6}  note"
+    )
     print(header)
     print("-" * len(header))
     for d in report.dependencies:
@@ -53,7 +57,8 @@ async def _sandbox_check(image: str) -> int:
     with tempfile.TemporaryDirectory(prefix="upshift-check-") as tmp:
         Path(tmp, "hello.py").write_text(
             "import json, platform, sys\n"
-            "json.dump({'python': platform.python_version(), 'ok': True}, open('result.json', 'w'))\n"
+            "payload = {'python': platform.python_version(), 'ok': True}\n"
+            "json.dump(payload, open('result.json', 'w'))\n"
             "print('hello from the sandbox', sys.version)\n",
             encoding="utf-8",
         )
