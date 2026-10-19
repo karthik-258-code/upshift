@@ -6,7 +6,7 @@ Upshift points at a repository, finds outdated dependencies, reads the real chan
 
 Built for the **Nebius x NVIDIA Global AI Hackathon**, Coding and Agentic Engineering track. Powered by **NVIDIA Nemotron 3** (Nano, Super, Ultra, and 3.5 Lightning) served on **Nebius Token Factory**, with **Nebius Serverless Jobs** for sandboxed test execution and **Tavily** for changelog research.
 
-> Status: Day 1 of 11. In place: model router with probe-verified capabilities, Token Factory client, event store and SSE API, Tavily tools, Docker sandbox executor, Python manifest parsing, AST symbol-usage scanner, PyPI client, Scout agent, and the `pyshop-legacy` demo repo. Next: Historian, Surgeon, Verifier. See [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the full plan.
+> Status: Day 3 of 11. **First fully autonomous upgrade achieved**: pydantic 1.10 -> 2.14 on the demo repo, 17/17 tests green, 4 attempts, 3 minutes, $0.0195 in Token Factory usage ([full record and diff](docs/examples/pyshop-legacy-pydantic.md)). In place: Scout, Historian, Surgeon, Verifier, Docker sandbox, probe-verified model routing with per-model reasoning control. Next: Reviewer, Scribe and merge request creation. See [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the plan.
 
 ## How it works
 
