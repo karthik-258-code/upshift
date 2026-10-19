@@ -177,7 +177,7 @@ async def _upgrade(source: str, package: str, keep: bool, budget_usd: float | No
             f"{verification.get('failure_count', '?')} failing"
             if verification else "not verified"
         )
-        flag = " (rolled back)" if attempt.rolled_back else ""
+        flag = f" (rolled back: {attempt.rollback_reason})" if attempt.rolled_back else ""
         print(
             f"  attempt {attempt.number}: {attempt.model}  edits {applied} applied / "
             f"{rejected} rejected  -> {outcome}  ${attempt.cost_usd:.4f}{flag}"

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -11,7 +10,7 @@ from openai.types.chat.chat_completion import Choice
 
 from upshift.agents.historian import ChangeEntry, ImpactDossier
 from upshift.agents.scout import DependencyAssessment
-from upshift.agents.surgeon import EDIT_SCHEMA, Surgeon
+from upshift.agents.surgeon import Surgeon, parse_edit_blocks, unescape_literal_newlines
 from upshift.agents.verifier import TestFailure, VerificationResult
 from upshift.core.budget import Budget
 from upshift.core.bus import EventBus
@@ -25,6 +24,24 @@ from upshift.tools.pypi import PackageInfo
 MIGRATION = "https://docs.pydantic.dev/latest/migration/"
 
 
+def edit_block(path: str, search: str, replace: str, just: str = "j", ev: str = "none") -> str:
+    return (
+        f"### EDIT {path}\n<<<<<<< SEARCH\n{search}=======\n{replace}>>>>>>> REPLACE\n"
+        f"JUSTIFICATION: {just}\nEVIDENCE: {ev}\n\n"
+    )
+
+
+def write_block(path: str, content: str, just: str = "j", ev: str = "none") -> str:
+    return (
+        f"### WRITE {path}\n<<<<<<< FILE\n{content}>>>>>>> END\n"
+        f"JUSTIFICATION: {just}\nEVIDENCE: {ev}\n\n"
+    )
+
+
+def response(analysis: str, *blocks: str, deps: str = "none") -> str:
+    return f"ANALYSIS:\n{analysis}\n\nNEW_DEPENDENCIES: {deps}\n\n" + "".join(blocks)
+
+
 class FakeVerifier:
     def __init__(self, results: list[VerificationResult]) -> None:
         self.results = results
@@ -36,13 +53,13 @@ class FakeVerifier:
 
 
 class FakeCompletions:
-    def __init__(self, outputs: list[dict[str, Any]]) -> None:
+    def __init__(self, outputs: list[str]) -> None:
         self.outputs = outputs
         self.requests: list[dict[str, Any]] = []
 
     async def create(self, **kwargs: Any) -> ChatCompletion:
         self.requests.append(kwargs)
-        text = json.dumps(self.outputs.pop(0))
+        text = self.outputs.pop(0)
         return ChatCompletion(
             id="x", object="chat.completion", created=0, model=kwargs["model"],
             choices=[Choice(index=0, finish_reason="stop",
@@ -78,7 +95,7 @@ def workspace(tmp_path: Path) -> Path:
     (tmp_path / "pyshop" / "settings.py").write_text(
         "from pydantic import BaseSettings\n\n\nclass Settings(BaseSettings):\n    x: int = 1\n"
     )
-    (tmp_path / "pyshop" / "models.py").write_text("from pydantic import BaseModel\n")
+    (tmp_path / "pyshop" / "models.py").write_text("from pydantic import BaseModel\n" * 30)
     (tmp_path / "secrets.py").write_text("TOKEN = 'x'\n")
     return tmp_path
 
@@ -113,10 +130,47 @@ def make_surgeon(catalog, outputs, verifier, bus=None):
     return surgeon, completions
 
 
-def test_schema_is_strict() -> None:
-    item = EDIT_SCHEMA["properties"]["edits"]["items"]
-    assert set(item["required"]) == set(item["properties"])
-    assert EDIT_SCHEMA["additionalProperties"] is False
+# ---- protocol parsing -------------------------------------------------------
+
+
+def test_parse_edit_blocks() -> None:
+    text = response(
+        "BaseSettings moved.\nAlso Config.",
+        edit_block("pyshop/settings.py", "from pydantic import BaseSettings\n",
+                   "from pydantic_settings import BaseSettings\n", "moved", MIGRATION),
+        write_block("pyshop/new.py", "```python\nX = 1\n```\n", "new"),
+        deps="pydantic-settings, `rich`",
+    )
+    data = parse_edit_blocks(text)
+    assert data["analysis"] == "BaseSettings moved.\nAlso Config."
+    assert data["new_dependencies"] == ["pydantic-settings", "rich"]
+    assert len(data["edits"]) == 2
+    first, second = data["edits"]
+    assert first == {
+        "path": "pyshop/settings.py", "op": "replace_block",
+        "search": "from pydantic import BaseSettings\n",
+        "replace": "from pydantic_settings import BaseSettings\n",
+        "justification": "moved", "evidence_url": MIGRATION,
+    }
+    assert second["op"] == "write_file" and second["replace"] == "X = 1\n"  # fences stripped
+    assert second["evidence_url"] == ""
+
+
+def test_parse_edit_blocks_json_fallback_and_empty() -> None:
+    data = parse_edit_blocks('{"analysis": "a", "edits": [{"path": "p"}], "new_dependencies": []}')
+    assert data["analysis"] == "a" and data["edits"] == [{"path": "p"}]
+    assert parse_edit_blocks("I could not determine the fix.") == {
+        "analysis": "", "edits": [], "new_dependencies": [],
+    }
+
+
+def test_unescape_literal_newlines() -> None:
+    assert unescape_literal_newlines("a\\nb\\n") == "a\nb\n"
+    assert unescape_literal_newlines("a\nb\\n") == "a\nb\\n"  # real newlines present: untouched
+    assert unescape_literal_newlines("plain") == "plain"
+
+
+# ---- loop behaviour ---------------------------------------------------------
 
 
 async def test_bump_alone_is_enough(tmp_path: Path, catalog: ModelCatalog) -> None:
@@ -143,22 +197,17 @@ async def test_edit_loop_applies_rejects_succeeds(tmp_path: Path, catalog: Model
         "pyshop/settings.py:1: in <module>\nE PydanticImportError: BaseSettings moved",
     )
     verifier = FakeVerifier([red(failure), green()])
-    outputs = [{
-        "analysis": "BaseSettings now lives in pydantic_settings.",
-        "edits": [
-            {"path": "pyshop/settings.py", "op": "replace_block",
-             "search": "from pydantic import BaseSettings\n",
-             "replace": "from pydantic_settings import BaseSettings\n",
-             "justification": "BaseSettings moved", "evidence_url": MIGRATION},
-            {"path": "secrets.py", "op": "write_file", "search": "", "replace": "TOKEN='y'\n",
-             "justification": "nope", "evidence_url": ""},
-            {"path": "../etc/passwd", "op": "write_file", "search": "", "replace": "x",
-             "justification": "nope", "evidence_url": ""},
-            {"path": "pyshop/models.py", "op": "replace_block", "search": "not in file",
-             "replace": "x", "justification": "typo", "evidence_url": ""},
-        ],
-        "new_dependencies": [],
-    }]
+    outputs = [response(
+        "BaseSettings now lives in pydantic_settings.",
+        edit_block("pyshop/settings.py", "from pydantic import BaseSettings\n",
+                   "from pydantic_settings import BaseSettings\n", "BaseSettings moved",
+                   MIGRATION),
+        write_block("secrets.py", "TOKEN='y'\n"),
+        write_block("../etc/passwd", "x\n"),
+        edit_block("pyshop/models.py", "not in file\n", "x\n"),
+        write_block("pyshop/models.py", "tiny\n"),
+        write_block("pyshop/helpers.py", "HELPER = True\n"),
+    )]
     surgeon, completions = make_surgeon(catalog, outputs, verifier, bus)
     budget = Budget(cap_usd=2.0)
 
@@ -166,26 +215,45 @@ async def test_edit_loop_applies_rejects_succeeds(tmp_path: Path, catalog: Model
 
     assert result.success and len(result.attempts) == 1
     assert result.attempts[0].model == catalog.models["super"].id
-    statuses = {e.path: (e.status, e.reason) for e in result.attempts[0].edits}
-    assert statuses["pyshop/settings.py"] == ("applied", "")
-    assert statuses["secrets.py"][0] == "rejected" and "allowed" in statuses["secrets.py"][1]
-    assert statuses["../etc/passwd"] == ("rejected", "invalid path")
-    assert "not found" in statuses["pyshop/models.py"][1]
+    edits = result.attempts[0].edits
+    status = {(e.path, e.op): (e.status, e.reason) for e in edits}
+    assert status[("pyshop/settings.py", "replace_block")] == ("applied", "")
+    assert status[("secrets.py", "write_file")][1] == "outside the allowed files"
+    assert status[("../etc/passwd", "write_file")] == ("rejected", "invalid path")
+    assert "not found" in status[("pyshop/models.py", "replace_block")][1]
+    assert "shrink" in status[("pyshop/models.py", "write_file")][1]
+    assert status[("pyshop/helpers.py", "write_file")] == ("applied", "")  # new file, allowed dir
     assert (ws / "pyshop" / "settings.py").read_text().startswith("from pydantic_settings")
     assert (ws / "secrets.py").read_text() == "TOKEN = 'x'\n"
-    assert sorted(result.files_changed) == ["pyshop/settings.py", "requirements.txt"]
-    assert "-from pydantic import BaseSettings" in result.diff
+    assert (ws / "pyshop" / "helpers.py").read_text() == "HELPER = True\n"
+    assert sorted(result.files_changed) == [
+        "pyshop/helpers.py", "pyshop/settings.py", "requirements.txt",
+    ]
+    assert "-from pydantic import BaseSettings" in result.diff and "/dev/null" in result.diff
     assert budget.spent_usd > 0 and result.cost_usd == budget.spent_usd
     assert verifier.labels == ["pydantic: after version bump", "pydantic: attempt 1"]
 
-    prompt = completions.requests[0]["messages"][1]["content"]
+    request = completions.requests[0]
+    assert "response_format" not in request and request["max_tokens"] == 16_000
+    assert "### EDIT" in request["messages"][0]["content"]
+    prompt = request["messages"][1]["content"]
     assert "=== pyshop/settings.py ===" in prompt and "=== secrets.py ===" not in prompt
     assert "BaseSettings moved" in prompt and "PydanticImportError" in prompt
-    assert completions.requests[0]["response_format"]["type"] == "json_schema"
 
     types = [e.type for e in store.events(run.id)]
     assert types.count(EventType.PATCH_PROPOSED) == 2  # manifest + attempt 1
-    assert types.count(EventType.PATCH_REJECTED) == 3
+    assert types.count(EventType.PATCH_REJECTED) == 4
+
+
+async def test_literal_newlines_are_repaired(tmp_path: Path, catalog: ModelCatalog) -> None:
+    ws = workspace(tmp_path)
+    (ws / "pyshop" / "models.py").write_text("A = 1\n")
+    f1 = ("t::a", "pyshop/models.py:1: boom")
+    outputs = [response("fix", write_block("pyshop/models.py", "A = 1\\nB = 2\\nC = 3\n"))]
+    surgeon, _ = make_surgeon(catalog, outputs, FakeVerifier([red(f1), green()]))
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success
+    assert (ws / "pyshop" / "models.py").read_text() == "A = 1\nB = 2\nC = 3\n"
 
 
 async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -> None:
@@ -194,40 +262,56 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
     bus = EventBus(store)
     run = store.create_run(Run(repo_url="x"))
     f1 = ("t::a", "pyshop/settings.py:1: boom")
-    verifier = FakeVerifier([red(f1), red(f1, ("t::b", "worse")), red(f1), green()])
+    f2 = ("t::b", "pyshop/settings.py:2: other")
+    verifier = FakeVerifier([red(f1), red(f1, f2), red(f1), red(f2), green()])
 
-    def edit(replace: str) -> dict[str, Any]:
-        return {"analysis": "try", "new_dependencies": [], "edits": [{
-            "path": "pyshop/settings.py", "op": "write_file", "search": "",
-            "replace": replace, "justification": "j", "evidence_url": "",
-        }]}
+    def rewrite(content: str) -> str:
+        return response("try", write_block("pyshop/settings.py", content))
 
-    outputs = [edit("BAD = 1\n"), edit("STILL_BAD = 1\n"), edit("GOOD = 1\n")]
+    outputs = [rewrite("WORSE = 1\n"), rewrite("SAME = 1\n"), rewrite("PROGRESS = 1\n")]
     surgeon, _ = make_surgeon(catalog, outputs, verifier, bus)
+    surgeon.max_attempts = 4
+    outputs.append(rewrite("GOOD = 1\n"))
     result = await surgeon.upgrade(ws, dep(), dossier(), run_id=run.id)
 
-    assert result.success and len(result.attempts) == 3
-    assert result.attempts[0].rolled_back  # 2 failures > 1 baseline failure
-    assert not result.attempts[1].rolled_back
-    models = [a.model for a in result.attempts]
-    assert models == [catalog.models["super"].id] * 2 + [catalog.models["ultra"].id]
+    assert result.success and len(result.attempts) == 4
+    reasons = [a.rollback_reason for a in result.attempts]
+    assert "2 failing vs 1 before" in reasons[0]
+    assert "same tests still fail" in reasons[1]
+    assert reasons[2] == "" and not result.attempts[2].rolled_back  # different failure: progress
     assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
+    models = [a.model for a in result.attempts]
+    assert models[:2] == [catalog.models["super"].id] * 2
+    assert models[2:] == [catalog.models["ultra"].id] * 2
     escalations = [e for e in store.events(run.id) if e.type is EventType.ESCALATION]
     assert len(escalations) == 1 and escalations[0].payload["attempt"] == 3
+
+
+async def test_unparsable_response_is_recorded(tmp_path: Path, catalog: ModelCatalog) -> None:
+    ws = workspace(tmp_path)
+    f1 = ("t::a", "pyshop/settings.py:1: boom")
+    surgeon, completions = make_surgeon(
+        catalog, ["I think the fix is obvious.", response("ok", write_block(
+            "pyshop/settings.py", "GOOD = 1\n"))],
+        FakeVerifier([red(f1), green()]),
+    )
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success and len(result.attempts) == 2
+    assert result.attempts[0].edits == [] and "no edit blocks" in result.attempts[0].analysis
+    assert "NO parsable edit blocks" in completions.requests[1]["messages"][1]["content"]
 
 
 async def test_gives_up_after_max_attempts(tmp_path: Path, catalog: ModelCatalog) -> None:
     ws = workspace(tmp_path)
     f1 = ("t::a", "pyshop/settings.py:1: boom")
     verifier = FakeVerifier([red(f1), red(f1), red(f1)])
-    outputs = [{"analysis": "a", "new_dependencies": [], "edits": [{
-        "path": "pyshop/settings.py", "op": "write_file", "search": "", "replace": f"V = {i}\n",
-        "justification": "j", "evidence_url": ""}]} for i in range(2)]
+    outputs = [response("a", write_block("pyshop/settings.py", f"V = {i}\n")) for i in range(2)]
     surgeon, _ = make_surgeon(catalog, outputs, verifier)
     surgeon.max_attempts = 2
     result = await surgeon.upgrade(ws, dep(), dossier())
     assert not result.success and len(result.attempts) == 2
     assert result.error and "still failing" in result.error
+    assert (ws / "pyshop" / "settings.py").read_text().startswith("from pydantic")  # restored
 
 
 async def test_install_failure_stops_early(tmp_path: Path, catalog: ModelCatalog) -> None:

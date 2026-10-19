@@ -21,7 +21,7 @@ JUNIT = """<?xml version="1.0" encoding="utf-8"?>
 <testcase classname="tests.test_models" name="test_ok" time="0.01"/>
 <testcase classname="tests.test_models" name="test_skip"><skipped message="no"/></testcase>
 <testcase classname="tests.test_models" name="test_money_is_immutable">
-<failure message="Failed: DID NOT RAISE TypeError">tests/test_models.py:27: in test_money_is_immutable
+<failure message="Failed: DID NOT RAISE TypeError">tests/test_models.py:27: in test_immutable
     with pytest.raises(TypeError):
 E   Failed: DID NOT RAISE</failure></testcase>
 <testcase classname="tests.test_settings" name="test_settings_defaults">
@@ -112,7 +112,10 @@ async def test_verify_detects_install_phase_and_timeout(tmp_path: Path) -> None:
 
 
 def test_bump_pin_and_add_requirement() -> None:
-    text = "pydantic==1.10.13\nSQLAlchemy==1.4.49  # db\nrequests>=2.28\nuvicorn[standard]==0.30.0\n"
+    text = (
+        "pydantic==1.10.13\nSQLAlchemy==1.4.49  # db\nrequests>=2.28\n"
+        "uvicorn[standard]==0.30.0\n"
+    )
     bumped, changed = bump_pin(text, "sqlalchemy", "2.0.35")
     assert changed and "SQLAlchemy==2.0.35  # db" in bumped and "pydantic==1.10.13" in bumped
     bumped, changed = bump_pin(bumped, "Uvicorn", "0.31.0")

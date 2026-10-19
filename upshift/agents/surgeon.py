@@ -3,31 +3,33 @@
 Safety properties:
 - Edits are restricted to an allowlist: files that import the package, files named in the
   failing tests' tracebacks, and manifests. Anything else is rejected and recorded.
-- Every attempt is verified in the sandbox. If an attempt makes things worse, the files are
-  rolled back to the best state seen so far before the next attempt.
+- Every attempt is verified in the sandbox. If an attempt makes things worse, or changes
+  nothing about which tests fail, the files are rolled back before the next attempt.
 - Attempts escalate through the router (Super, Super, Ultra) and stop at the budget cap.
-- Output is schema-constrained JSON of search/replace blocks, each with a justification and
-  the evidence URL it rests on. That is what makes the final merge request auditable.
+- The model answers in a plain-text SEARCH/REPLACE block protocol rather than JSON: code
+  inside JSON strings gets double-escaped by models far too often. Each block carries a
+  justification and the evidence URL it rests on, which is what makes the MR auditable.
 """
 
 from __future__ import annotations
 
 import difflib
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from upshift.agents.historian import ImpactDossier
 from upshift.agents.scout import DependencyAssessment
-from upshift.agents.verifier import Verifier, VerificationResult
+from upshift.agents.verifier import VerificationResult, Verifier
 from upshift.core.budget import Budget
 from upshift.core.bus import EventBus
 from upshift.core.events import Event, EventType
 from upshift.ecosystems.python import add_requirement, bump_pin, normalize, parse_requirements
-from upshift.llm.client import TokenFactoryClient
+from upshift.llm.client import TokenFactoryClient, content_of
 from upshift.llm.router import BudgetExhausted, ModelRouter, NoCapableModel, TaskClass
-from upshift.llm.structured import complete_json
+from upshift.llm.structured import parse_json
 from upshift.tools.pypi import PyPIClient
 
 log = logging.getLogger(__name__)
@@ -35,32 +37,35 @@ log = logging.getLogger(__name__)
 MAX_CONTEXT_CHARS = 120_000
 MAX_OUTPUT_TOKENS = 16_000
 MAX_FAILURES_SHOWN = 12
+SHRINK_LIMIT = 0.3  # a rewrite keeping <30% of a >20-line file is almost always truncation
 
-EDIT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "analysis": {"type": "string"},
-        "edits": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string"},
-                    "op": {"type": "string", "enum": ["replace_block", "write_file"]},
-                    "search": {"type": "string"},
-                    "replace": {"type": "string"},
-                    "justification": {"type": "string"},
-                    "evidence_url": {"type": "string"},
-                },
-                "required": ["path", "op", "search", "replace", "justification", "evidence_url"],
-                "additionalProperties": False,
-            },
-        },
-        "new_dependencies": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": ["analysis", "edits", "new_dependencies"],
-    "additionalProperties": False,
-}
+FORMAT_SPEC = """Respond in exactly this plain-text format. No JSON, no markdown fences.
+
+ANALYSIS:
+<a few sentences: what broke and why>
+
+NEW_DEPENDENCIES: <comma-separated package names to add to the manifest, or none>
+
+Then one block per edit. To change part of a file:
+
+### EDIT <relative/path.py>
+<<<<<<< SEARCH
+<existing lines copied verbatim, enough to be unique in the file>
+=======
+<replacement lines>
+>>>>>>> REPLACE
+JUSTIFICATION: <one sentence>
+EVIDENCE: <url from the dossier, or none>
+
+To rewrite most of a file or create a new one:
+
+### WRITE <relative/path.py>
+<<<<<<< FILE
+<entire new file content>
+>>>>>>> END
+JUSTIFICATION: <one sentence>
+EVIDENCE: <url from the dossier, or none>
+"""
 
 SYSTEM_PROMPT = (
     "You are the Surgeon in Upshift, a dependency-upgrade agent. One package has just been "
@@ -72,11 +77,113 @@ SYSTEM_PROMPT = (
     "pin the package back. Never delete tests or weaken assertions; if a test asserts the OLD "
     "library's behaviour (for example the exception type it raised), update it to the "
     "documented new behaviour and say so in the justification. Fix every failure you can see, "
-    "not just the first. Prefer replace_block with a search string copied verbatim from the "
-    "file that occurs exactly once; use write_file (search empty, replace = whole file) only "
-    "when most of a file changes. Each edit needs a one-sentence justification and the "
-    "evidence_url from the dossier that supports it (empty string if none applies)."
+    "not just the first. Prefer EDIT blocks; use WRITE only when most of a file changes, and "
+    "then include the complete file. Write real newlines, never the characters backslash-n.\n\n"
+    + FORMAT_SPEC
 )
+
+BLOCK_HEADER = re.compile(r"^###\s+(EDIT|WRITE)\s+(\S+)\s*$")
+FENCE = re.compile(r"^```[\w+-]*\s*$")
+
+
+def unescape_literal_newlines(text: str) -> str:
+    """Repair content the model emitted with literal backslash-n instead of newlines."""
+    if "\n" in text or "\\n" not in text:
+        return text
+    return text.replace("\\n", "\n").replace("\\t", "\t").replace('\\"', '"')
+
+
+def _strip_fences(lines: list[str]) -> list[str]:
+    while lines and FENCE.match(lines[0]):
+        lines = lines[1:]
+    while lines and FENCE.match(lines[-1]):
+        lines = lines[:-1]
+    return lines
+
+
+def parse_edit_blocks(text: str) -> dict[str, Any]:
+    """Parse the SEARCH/REPLACE protocol into the edit dicts the applier understands.
+
+    Falls back to JSON of the same shape if the model ignored the format.
+    """
+    lines = text.replace("\r\n", "\n").split("\n")
+    analysis: list[str] = []
+    deps: list[str] = []
+    edits: list[dict[str, Any]] = []
+    in_analysis = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        header = BLOCK_HEADER.match(line.strip())
+        if header:
+            in_analysis = False
+            kind, path = header.group(1), header.group(2)
+            i += 1
+            if i < len(lines) and lines[i].startswith("<<<<<<<"):
+                i += 1
+            first: list[str] = []
+            second: list[str] = []
+            in_second = False
+            while i < len(lines) and not lines[i].startswith(">>>>>>>"):
+                if kind == "EDIT" and not in_second and lines[i].startswith("======="):
+                    in_second = True
+                else:
+                    (second if in_second else first).append(lines[i])
+                i += 1
+            i += 1  # closing marker
+            justification = evidence = ""
+            while i < len(lines):
+                probe = lines[i].strip()
+                if probe.startswith("JUSTIFICATION:"):
+                    justification = probe.split(":", 1)[1].strip()
+                elif probe.startswith("EVIDENCE:"):
+                    evidence = probe.split(":", 1)[1].strip()
+                elif probe:
+                    break
+                i += 1
+            first, second = _strip_fences(first), _strip_fences(second)
+            if evidence.lower() == "none":
+                evidence = ""
+            if kind == "EDIT":
+                edits.append({
+                    "path": path, "op": "replace_block",
+                    "search": "\n".join(first) + "\n", "replace": "\n".join(second) + "\n",
+                    "justification": justification, "evidence_url": evidence,
+                })
+            else:
+                edits.append({
+                    "path": path, "op": "write_file", "search": "",
+                    "replace": "\n".join(first) + "\n",
+                    "justification": justification, "evidence_url": evidence,
+                })
+            continue
+        stripped = line.strip()
+        if stripped.startswith("ANALYSIS:"):
+            in_analysis = True
+            rest = stripped.split(":", 1)[1].strip()
+            if rest:
+                analysis.append(rest)
+        elif stripped.startswith("NEW_DEPENDENCIES:"):
+            in_analysis = False
+            value = stripped.split(":", 1)[1].strip()
+            if value and value.lower() != "none":
+                deps = [d.strip().strip("`") for d in value.split(",") if d.strip()]
+        elif in_analysis:
+            analysis.append(line)
+        i += 1
+
+    if not edits and text.lstrip().startswith("{"):
+        try:
+            data = parse_json(text)
+            if isinstance(data, dict):
+                return {
+                    "analysis": str(data.get("analysis", "")),
+                    "edits": [e for e in data.get("edits", []) or [] if isinstance(e, dict)],
+                    "new_dependencies": [str(d) for d in data.get("new_dependencies", []) or []],
+                }
+        except ValueError:
+            pass
+    return {"analysis": "\n".join(analysis).strip(), "edits": edits, "new_dependencies": deps}
 
 
 @dataclass
@@ -98,6 +205,7 @@ class Attempt:
     verification: dict[str, Any] | None
     cost_usd: float
     rolled_back: bool = False
+    rollback_reason: str = ""
 
 
 @dataclass
@@ -120,7 +228,7 @@ class SurgeryResult:
 
 
 def _clean_path(raw: str) -> str | None:
-    path = raw.strip().replace("\\", "/")
+    path = raw.strip().strip("`'\"").replace("\\", "/")
     while path.startswith("./"):
         path = path[2:]
     path = path.lstrip("/")
@@ -159,6 +267,25 @@ def unified_diff(originals: dict[str, str | None], workspace: Path) -> tuple[str
             )
         )
     return "".join(chunks), changed
+
+
+def _find_block(content: str, search: str) -> str | None:
+    """Return the exact substring of content that the search block denotes, or None."""
+    candidates = [search, search.rstrip("\n"), unescape_literal_newlines(search)]
+    for candidate in candidates:
+        if candidate and content.count(candidate) == 1:
+            return candidate
+    # tolerate trailing-whitespace drift line by line
+    wanted = [ln.rstrip() for ln in search.rstrip("\n").split("\n")]
+    lines = content.split("\n")
+    hits = [
+        i for i in range(len(lines) - len(wanted) + 1)
+        if [ln.rstrip() for ln in lines[i : i + len(wanted)]] == wanted
+    ]
+    if len(hits) == 1:
+        start = hits[0]
+        return "\n".join(lines[start : start + len(wanted)])
+    return None
 
 
 class Surgeon:
@@ -271,11 +398,19 @@ class Surgeon:
         if previous is not None:
             rejected = [e for e in previous.edits if e.status == "rejected"]
             parts += ["", f"Previous attempt ({previous.model}) analysis: {previous.analysis}"]
+            if not previous.edits:
+                parts.append(
+                    "Your previous response contained NO parsable edit blocks. Follow the "
+                    "### EDIT / ### WRITE format exactly."
+                )
             if rejected:
                 parts.append("Previous edits that were REJECTED (fix these):")
                 parts += [f"- {e.path} [{e.op}]: {e.reason}" for e in rejected]
             if previous.rolled_back:
-                parts.append("The previous attempt made more tests fail and was rolled back.")
+                parts.append(
+                    f"The previous attempt was rolled back: {previous.rollback_reason}. "
+                    "The files below are back to their pre-attempt state."
+                )
         parts += ["", "Files you may edit (full contents, exact text):"]
         remaining = MAX_CONTEXT_CHARS
         omitted: list[str] = []
@@ -310,30 +445,42 @@ class Surgeon:
         rel = _clean_path(raw_path)
         if rel is None:
             return rejected("invalid path")
-        allowed_dirs = {str(PurePosixPath(a).parent) for a in allowed}
-        if rel not in allowed and str(PurePosixPath(rel).parent) not in allowed_dirs:
-            return rejected("outside the allowed files")
         if op not in ("replace_block", "write_file"):
             return rejected(f"unknown op {op!r}")
-
         current = _read(workspace, rel)
-        replace = str(edit.get("replace", ""))
+        allowed_dirs = {str(PurePosixPath(a).parent) for a in allowed}
+        if rel not in allowed:
+            creating = current is None and op == "write_file"
+            if not (creating and str(PurePosixPath(rel).parent) in allowed_dirs):
+                return rejected("outside the allowed files")
+
+        replace = unescape_literal_newlines(str(edit.get("replace", "")))
         if op == "replace_block":
             search = str(edit.get("search", ""))
             if current is None:
-                return rejected("file does not exist; use write_file to create it")
-            if not search:
+                return rejected("file does not exist; use WRITE to create it")
+            if not search.strip():
                 return rejected("empty search block")
-            count = current.count(search)
-            if count == 0:
+            found = _find_block(current, search)
+            if found is None:
+                count = current.count(search.rstrip("\n"))
+                if count > 1:
+                    return rejected(f"search block occurs {count} times; make it unique")
                 return rejected("search block not found verbatim in file")
-            if count > 1:
-                return rejected(f"search block occurs {count} times; make it unique")
+            replacement = replace if found.endswith("\n") else replace.rstrip("\n")
             originals.setdefault(rel, current)
-            _write(workspace, rel, current.replace(search, replace, 1))
+            _write(workspace, rel, current.replace(found, replacement, 1))
         else:
             if not replace.strip():
-                return rejected("write_file with empty content")
+                return rejected("WRITE with empty content")
+            if current is not None:
+                old_lines = current.count("\n") + 1
+                new_lines = replace.count("\n") + 1
+                if old_lines > 20 and new_lines < old_lines * SHRINK_LIMIT:
+                    return rejected(
+                        f"WRITE would shrink {old_lines} lines to {new_lines}; looks truncated. "
+                        "Use EDIT blocks or include the complete file"
+                    )
             originals.setdefault(rel, current)
             _write(workspace, rel, replace)
         return AppliedEdit(rel, op, justification, evidence, "applied")
@@ -351,6 +498,10 @@ class Surgeon:
                     target.unlink()
             else:
                 _write(workspace, rel, content)
+
+    @staticmethod
+    def _failing_ids(verification: VerificationResult) -> set[str]:
+        return {f.test for f in verification.failures}
 
     # ---- main loop ----------------------------------------------------------
 
@@ -408,8 +559,7 @@ class Surgeon:
             result.diff, result.files_changed = unified_diff(originals, workspace)
             return result
 
-        best_failures = verification.failure_count
-        best_verification = verification
+        best = verification
         previous: Attempt | None = None
         last_model: str | None = None
 
@@ -422,8 +572,8 @@ class Surgeon:
             )
             try:
                 decision = self.router.route(
-                    TaskClass.CODEGEN, attempt=number, required_caps={"json_schema"},
-                    budget=budget, min_context_tokens=len(prompt) // 3 + MAX_OUTPUT_TOKENS,
+                    TaskClass.CODEGEN, attempt=number, budget=budget,
+                    min_context_tokens=len(prompt) // 3 + MAX_OUTPUT_TOKENS,
                 )
             except (BudgetExhausted, NoCapableModel) as exc:
                 result.error = f"{type(exc).__name__}: {exc}"
@@ -437,13 +587,12 @@ class Surgeon:
 
             attempt_cost_before = self.llm.total_cost_usd
             try:
-                data = await complete_json(
-                    self.llm, decision.model,
+                response = await self.llm.complete(
+                    decision.model,
                     [{"role": "system", "content": SYSTEM_PROMPT},
                      {"role": "user", "content": prompt}],
-                    schema_name="surgeon_edits", schema=EDIT_SCHEMA,
-                    max_tokens=MAX_OUTPUT_TOKENS, agent=self.agent, run_id=run_id,
-                    budget=budget, attempt=number,
+                    temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS, agent=self.agent,
+                    run_id=run_id, budget=budget, attempt=number,
                 )
             except Exception as exc:  # noqa: BLE001 - recorded, loop continues
                 log.exception("surgeon attempt %d failed", number)
@@ -453,27 +602,33 @@ class Surgeon:
                 )
                 result.attempts.append(previous)
                 continue
+            text = content_of(response)
+            finish = response.choices[0].finish_reason if response.choices else None
+            data = parse_edit_blocks(text)
+            if finish == "length":
+                log.warning("surgeon: output truncated (%d chars visible)", len(text))
 
             snapshot = self._snapshot(workspace, allowed)
             applied: list[AppliedEdit] = []
-            for edit in data.get("edits", []) or []:
-                if isinstance(edit, dict):
-                    outcome = self.apply_edit(workspace, allowed, edit, originals)
-                    applied.append(outcome)
-                    if outcome.status == "rejected":
-                        await self._emit(
-                            run_id, EventType.PATCH_REJECTED, node, attempt=number,
-                            **asdict(outcome),
-                        )
-            for extra in data.get("new_dependencies", []) or []:
+            for edit in data["edits"]:
+                outcome = self.apply_edit(workspace, allowed, edit, originals)
+                applied.append(outcome)
+                if outcome.status == "rejected":
+                    await self._emit(
+                        run_id, EventType.PATCH_REJECTED, node, attempt=number,
+                        **asdict(outcome),
+                    )
+            for extra in data["new_dependencies"]:
                 note = await self._add_dependency(workspace, dep.source, str(extra), originals)
                 if note:
                     result.manifest_changes.append(note)
 
+            analysis = data["analysis"] or (
+                f"(no edit blocks parsed; finish_reason={finish}) {text[:600]}"
+            )
             attempt = Attempt(
-                number=number, model=decision.model.id,
-                analysis=str(data.get("analysis", ""))[:2_000], edits=applied,
-                verification=None,
+                number=number, model=decision.model.id, analysis=analysis[:2_000],
+                edits=applied, verification=None,
                 cost_usd=round(self.llm.total_cost_usd - attempt_cost_before, 6),
             )
             await self._emit(
@@ -494,13 +649,23 @@ class Surgeon:
             if verification.ok:
                 result.success = True
                 break
-            if verification.phase == "test" and verification.failure_count > best_failures:
+
+            reason = ""
+            if verification.phase != "test":
+                reason = f"{verification.phase} phase failed"
+            elif verification.failure_count > best.failure_count:
+                reason = (
+                    f"{verification.failure_count} failing vs {best.failure_count} before"
+                )
+            elif self._failing_ids(verification) == self._failing_ids(best):
+                reason = "exactly the same tests still fail; the edits had no effect"
+            if reason:
                 self._restore(workspace, snapshot)
                 attempt.rolled_back = True
-                verification = best_verification
+                attempt.rollback_reason = reason
+                verification = best
             else:
-                best_failures = min(best_failures, verification.failure_count)
-                best_verification = verification
+                best = verification
             previous = attempt
 
         result.final = verification.to_dict()

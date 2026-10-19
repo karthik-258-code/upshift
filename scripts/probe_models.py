@@ -234,7 +234,10 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001
                 thinking["notes"] = f"{type(exc).__name__}: {exc}"[:300]
         state = "ON" if thinking["detected"] else "off"
-        print(f"  {'reasoning':<20} {state:<4}        switch: {thinking['control']}  {thinking['notes']}")
+        print(
+            f"  {'reasoning':<20} {state:<4}        switch: {thinking['control']}  "
+            f"{thinking['notes']}"
+        )
         results[spec.id] = {**flags, "latency_ms": latency, "notes": notes, "thinking": thinking}
 
     out = args.out or settings.capabilities_file
