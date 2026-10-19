@@ -2,8 +2,8 @@
 # IDs, prices and context sizes come from research-brief.md (Token Factory public pricing).
 # Change values here, never in code. Run `python scripts/probe_models.py` to verify real
 # capabilities per model; it writes config/capabilities.json which the router treats as truth.
-# Probe on 2026-10-19: lightning, super and ultra passed every capability; the nano ID below
-# returned 404. Run `python scripts/probe_models.py --list` to find the correct Nano ID.
+# Probe on 2026-10-19: lightning, super and ultra passed every capability. The Nano ID in the
+# research brief was wrong (lowercase); the correct ID below comes from `probe_models.py --list`.
 base_url: https://api.tokenfactory.us-central1.nebius.com/v1/
 
 models:
@@ -17,14 +17,14 @@ models:
     notes: Primary tier-0 model. Nano pricing, 1M context. Classification, ranking, triage, long changelog ingestion.
 
   nano:
-    id: nvidia/nvidia-nemotron-3-nano-30b-a3b
+    id: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
     tier: 0
     context_tokens: 262000
     input_price_per_m: 0.06
     output_price_per_m: 0.24
     optional: true
     documented_capabilities: [chat, tool_calling, json_object]
-    notes: Fallback tier-0 model. ID from the brief returned 404 on 2026-10-19; confirm with probe --list.
+    notes: Fallback tier-0 model. Re-run `probe_models.py --only nano` after changing this ID.
 
   super:
     id: nvidia/nemotron-3-super-120b-a12b
