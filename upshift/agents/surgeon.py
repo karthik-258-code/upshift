@@ -233,9 +233,13 @@ class SurgeryResult:
     final: dict[str, Any] | None = None
     cost_usd: float = 0.0
     error: str | None = None
+    # original contents of every touched file, kept so later passes can extend the diff
+    originals: dict[str, str | None] = field(default_factory=dict, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        data.pop("originals", None)
+        return data
 
 
 def _outcome(edit: dict[str, Any], path: str, status: str, reason: str = "") -> AppliedEdit:
@@ -752,6 +756,94 @@ class Surgeon:
         result.final = verification.to_dict()
         result.diff, result.files_changed = unified_diff(originals, workspace)
         result.cost_usd = round(self.llm.total_cost_usd - cost_before, 6)
+        result.originals = originals
         if not result.success and result.error is None:
             result.error = f"tests still failing after {len(result.attempts)} attempt(s)"
         return result
+
+    # ---- polish pass --------------------------------------------------------
+
+    async def polish(
+        self,
+        workspace: Path,
+        dep: DependencyAssessment,
+        dossier: ImpactDossier,
+        surgery: SurgeryResult,
+        findings: list[dict[str, Any]],
+        run_id: str | None = None,
+        budget: Budget | None = None,
+    ) -> Attempt | None:
+        """One extra attempt that addresses reviewer findings while keeping the suite green.
+
+        Rolled back entirely if any test stops passing. Extends surgery.diff in place.
+        """
+        if not surgery.success or not findings:
+            return None
+        node = f"dep:{dep.name}"
+        allowed = self.allowed_files(workspace, dep, None)
+        for finding in findings:
+            rel = _clean_path(str(finding.get("file", "")))
+            if rel and rel not in allowed and (workspace / rel).is_file():
+                allowed.append(rel)
+        lines = [
+            f"Upgrade: {dep.name} {dep.current} -> {dep.latest}. The upgrade is complete and "
+            "the test suite is GREEN. A reviewer raised the findings below. Address them with "
+            "minimal edits. Every test must still pass; do not change behaviour, do not touch "
+            "tests unless a finding is about a test, and do not revisit the upgrade itself.",
+            "",
+            "Findings:",
+        ]
+        for finding in findings:
+            where = finding.get("file", "")
+            if finding.get("line"):
+                where += f":{finding['line']}"
+            lines.append(
+                f"- [{finding.get('severity', '')}/{finding.get('kind', '')}] {where}: "
+                f"{finding.get('title', '')}. {finding.get('detail', '')} "
+                f"Suggestion: {finding.get('suggestion', '') or 'none'}"
+            )
+        lines += ["", "Files you may edit (full contents, exact text):"]
+        for rel in allowed:
+            lines.append(f"=== {rel} ===\n{_read(workspace, rel) or ''}")
+        prompt = "\n".join(lines)
+
+        decision = self.router.route(
+            TaskClass.CODEGEN, attempt=1, budget=budget,
+            min_context_tokens=len(prompt) // 3 + MAX_OUTPUT_TOKENS,
+        )
+        cost_before = self.llm.total_cost_usd
+        response = await self.llm.complete(
+            decision.model,
+            [{"role": "system", "content": SYSTEM_PROMPT},
+             {"role": "user", "content": prompt}],
+            temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS, agent=self.agent,
+            run_id=run_id, budget=budget,
+        )
+        data = parse_edit_blocks(content_of(response))
+        snapshot = self._snapshot(workspace, allowed)
+        applied = self.apply_edits(workspace, allowed, data["edits"], surgery.originals)
+        attempt = Attempt(
+            number=len(surgery.attempts) + 1, model=decision.model.id,
+            analysis=("polish: " + data["analysis"])[:2_000], edits=applied, verification=None,
+            cost_usd=round(self.llm.total_cost_usd - cost_before, 6),
+        )
+        await self._emit(
+            run_id, EventType.PATCH_PROPOSED, node, attempt=attempt.number, kind="polish",
+            model=decision.model.id, analysis=attempt.analysis,
+            edits=[asdict(e) for e in applied],
+        )
+        if any(e.status == "applied" for e in applied):
+            verification = await self.verifier.verify(
+                workspace, run_id, node, label=f"{dep.name}: polish"
+            )
+            attempt.verification = verification.to_dict()
+            if not verification.ok:
+                self._restore(workspace, snapshot)
+                attempt.rolled_back = True
+                attempt.rollback_reason = "polish broke the test suite"
+            else:
+                surgery.final = attempt.verification
+        surgery.attempts.append(attempt)
+        surgery.diff, surgery.files_changed = unified_diff(surgery.originals, workspace)
+        surgery.cost_usd = round(surgery.cost_usd + attempt.cost_usd, 6)
+        return attempt
