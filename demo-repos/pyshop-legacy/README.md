@@ -1,7 +1,7 @@
 # pyshop-legacy
 
 A small catalogue and ordering library for a fictional shop. It was written in 2023 against
-pydantic 1.x and SQLAlchemy 1.4 and has not been touched since. Nineteen tests, all green on
+pydantic 1.x and SQLAlchemy 1.4 and has not been touched since. Seventeen tests, all green on
 the pinned versions in `requirements.txt`.
 
 The test suite treats deprecation warnings raised from this package's own code as errors
