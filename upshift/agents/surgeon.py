@@ -320,7 +320,7 @@ class Surgeon:
         verifier: Verifier,
         bus: EventBus | None = None,
         pypi: PyPIClient | None = None,
-        max_attempts: int = 5,
+        max_attempts: int = 8,
     ) -> None:
         self.llm = llm
         self.router = router
@@ -417,6 +417,17 @@ class Surgeon:
         ]
         for failure in verification.failures[:MAX_FAILURES_SHOWN]:
             parts.append(f"--- {failure.test} ({failure.kind})\n{failure.message}")
+        if verification.failures and verification.passed == 0 and all(
+            f.kind == "error" for f in verification.failures
+        ):
+            parts.append(
+                "\nNOTE: these are collection (import-time) errors. The modules fail to import, "
+                "so NO tests have run yet and the single error shown hides every other "
+                "incompatibility behind it. Do not fix just the line in the traceback: apply "
+                "EVERY relevant documented change above to every editable file in one pass "
+                "(imports, class definitions, decorators, config, method renames), so that the "
+                "modules import cleanly and the tests actually execute."
+            )
         if len(verification.failures) > MAX_FAILURES_SHOWN:
             parts.append(f"... {len(verification.failures) - MAX_FAILURES_SHOWN} more")
         if not verification.failures:

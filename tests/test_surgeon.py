@@ -302,10 +302,10 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
     assert reasons[2] == "" and not result.attempts[2].rolled_back  # different failure: progress
     assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
     models = [a.model for a in result.attempts]
-    assert models[:2] == [catalog.models["super"].id] * 2
-    assert models[2:] == [catalog.models["ultra"].id] * 2
+    assert models[0] == catalog.models["super"].id
+    assert models[1:] == [catalog.models["ultra"].id] * 3
     escalations = [e for e in store.events(run.id) if e.type is EventType.ESCALATION]
-    assert len(escalations) == 1 and escalations[0].payload["attempt"] == 3
+    assert len(escalations) == 1 and escalations[0].payload["attempt"] == 2
 
 
 async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelCatalog) -> None:

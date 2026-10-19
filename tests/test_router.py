@@ -22,7 +22,7 @@ def test_unverified_model_is_skipped_after_probe(probed_catalog: ModelCatalog) -
 def test_codegen_escalation_ladder(catalog: ModelCatalog) -> None:
     router = ModelRouter(catalog)
     assert router.route(TaskClass.CODEGEN, attempt=1).model.key == "super"
-    assert router.route(TaskClass.CODEGEN, attempt=2).model.key == "super"
+    assert router.route(TaskClass.CODEGEN, attempt=2).model.key == "ultra"
     assert router.route(TaskClass.CODEGEN, attempt=3).model.key == "ultra"
     assert router.route(TaskClass.CODEGEN, attempt=9).model.key == "ultra"
 
