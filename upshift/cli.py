@@ -140,7 +140,8 @@ async def _upgrade(source: str, package: str, keep: bool, budget_usd: float | No
         TavilySearchTool(settings.tavily_api_key, cache=tavily_cache),
         TavilyExtractTool(settings.tavily_api_key, cache=tavily_cache, max_chars=400_000),
     )
-    surgeon = Surgeon(llm, router, Verifier(executor), pypi=pypi)
+    search_tool = TavilySearchTool(settings.tavily_api_key, cache=tavily_cache)
+    surgeon = Surgeon(llm, router, Verifier(executor), pypi=pypi, search=search_tool)
     budget = Budget(budget_usd or settings.default_budget_usd)
 
     try:

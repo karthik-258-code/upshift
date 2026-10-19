@@ -338,6 +338,59 @@ async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelC
     assert [a.rolled_back for a in result.attempts] == [False, False, False]
 
 
+def test_error_line_cleaning() -> None:
+    from upshift.agents.surgeon import error_line
+
+    message = (
+        "/work/pyshop/models.py:41: in <module>\n    class Product(BaseModel):\n"
+        "E   pydantic.warnings.PydanticDeprecatedSince211: Annotation 'kind' is marked as "
+        "final and has a default value.\nE   For further information visit https://x"
+    )
+    assert error_line(message).startswith(
+        "pydantic.warnings.PydanticDeprecatedSince211: Annotation 'kind' is marked as final"
+    )
+    assert error_line("E       Failed: DID NOT RAISE <class 'pydantic.ValidationError'>") == (
+        "Failed: DID NOT RAISE pydantic.ValidationError"
+    )
+    assert error_line("") == ""
+
+
+async def test_targeted_research_after_rollback(tmp_path: Path, catalog: ModelCatalog) -> None:
+    from upshift.tools.tavily_search import TavilySearchTool
+
+    class FakeTavily:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def search(self, **params: Any) -> dict[str, Any]:
+            self.queries.append(params["query"])
+            return {"results": [{
+                "title": "Migration guide", "url": "https://docs.example/migration",
+                "content": "const was removed; use Literal instead.", "score": 0.9,
+            }]}
+
+    ws = workspace(tmp_path)
+    f1 = ("t::const_kind_rejected", "tests/test_models.py:40: E Failed: DID NOT RAISE X")
+    f2 = ("t::import", "pyshop/models.py:41: in <module>\nE TypeError: final with default")
+    verifier = FakeVerifier([red(f1), red(f2, ("t::other", "E boom")), green()])
+    outputs = [
+        response("a", write_block("pyshop/settings.py", "BAD = 1\n")),
+        response("b", write_block("pyshop/settings.py", "GOOD = 1\n")),
+    ]
+    surgeon, completions = make_surgeon(catalog, outputs, verifier)
+    fake = FakeTavily()
+    surgeon.search = TavilySearchTool(client=fake)
+    result = await surgeon.upgrade(ws, dep(), dossier())
+
+    assert result.success and result.attempts[0].rolled_back
+    assert fake.queries[0].startswith("pydantic 2 TypeError: final with default")
+    assert any("DID NOT RAISE X" in q for q in fake.queries)
+    second_prompt = completions.requests[1]["messages"][1]["content"]
+    assert "Targeted web research" in second_prompt
+    assert "const was removed; use Literal instead." in second_prompt
+    assert "Targeted web research" not in completions.requests[0]["messages"][1]["content"]
+
+
 def test_warnings_as_errors_detection(tmp_path: Path) -> None:
     from upshift.agents.surgeon import warnings_are_errors
 

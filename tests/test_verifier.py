@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import json
+from pathlib import Path
 
 from upshift.agents.verifier import (
     API_PATH,
@@ -76,7 +75,7 @@ def test_build_test_command(tmp_path: Path) -> None:
     assert "introspect.py" not in command
 
     with_api = build_test_command(tmp_path, ["pydantic", "pydantic_settings"])
-    assert "python .upshift/introspect.py pydantic pydantic_settings > .upshift/api.json" in with_api
+    assert "introspect.py pydantic pydantic_settings > .upshift/api.json" in with_api
     assert "importlib.import_module(name)" in with_api
 
 

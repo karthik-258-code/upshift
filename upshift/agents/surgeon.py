@@ -32,6 +32,7 @@ from upshift.llm.client import TokenFactoryClient, content_of
 from upshift.llm.router import BudgetExhausted, ModelRouter, NoCapableModel, TaskClass
 from upshift.llm.structured import parse_json
 from upshift.tools.pypi import PyPIClient
+from upshift.tools.tavily_search import TavilySearchTool
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,16 @@ MAX_CONTEXT_CHARS = 120_000
 MAX_OUTPUT_TOKENS = 24_000
 MAX_FAILURES_SHOWN = 12
 WARNING_CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
+
+
+def error_line(message: str) -> str:
+    """First `E ...` line of a pytest failure, cleaned for use in a search query."""
+    lines = [ln.strip() for ln in message.splitlines() if ln.strip()]
+    line = next((ln for ln in lines if ln.startswith("E ")), lines[0] if lines else "")
+    line = re.sub(r"^E\s+", "", line)
+    line = re.sub(r"\S*[/\\]\S+\.py:\d+", "", line)  # drop file paths
+    line = re.sub(r"<class '([\w.]+)'>", r"\1", line)
+    return re.sub(r"\s+", " ", line).strip()
 
 
 def warnings_are_errors(workspace: Path) -> str | None:
@@ -360,6 +371,7 @@ class Surgeon:
         bus: EventBus | None = None,
         pypi: PyPIClient | None = None,
         max_attempts: int = 8,
+        search: TavilySearchTool | None = None,
     ) -> None:
         self.llm = llm
         self.router = router
@@ -367,6 +379,46 @@ class Surgeon:
         self.bus = bus
         self.pypi = pypi
         self.max_attempts = max_attempts
+        self.search = search
+
+    # ---- targeted research when stuck -----------------------------------------
+
+    async def targeted_research(
+        self,
+        dep: DependencyAssessment,
+        verification: VerificationResult,
+        previous: Attempt | None,
+        run_id: str | None,
+    ) -> list[str]:
+        """Search the web for the specific errors blocking progress. Used after a stalled attempt."""
+        if self.search is None:
+            return []
+        major = (dep.latest or "").split(".")[0]
+        seeds: list[tuple[str, str]] = []
+        if previous is not None and previous.verification:
+            for failure in previous.verification.get("failures", [])[:1]:
+                seeds.append((str(failure.get("test", "")), str(failure.get("message", ""))))
+        for failure in verification.failures[:2]:
+            seeds.append((failure.test, failure.message))
+        queries: list[str] = []
+        for test, message in seeds:
+            error = error_line(message)[:110]
+            name = test.rsplit("::", 1)[-1].removeprefix("test_").replace("_", " ")
+            query = f"{dep.name} {major} {error}" if error else f"{dep.name} {major} {name}"
+            if query not in queries:
+                queries.append(query)
+        notes: list[str] = []
+        for query in queries[:3]:
+            result = await self.search.search(query, max_results=3)
+            await self._emit(
+                run_id, EventType.TOOL_CALL, f"dep:{dep.name}", tool="web_search",
+                query=query, results=len(result.get("results", [])),
+                cached=result.get("cached", False), error=result.get("error"),
+            )
+            for item in result.get("results", [])[:3]:
+                snippet = str(item.get("content", "")).replace("\n", " ")[:500]
+                notes.append(f"- {item.get('title', '')} ({item.get('url', '')}): {snippet}")
+        return notes
 
     async def _emit(
         self, run_id: str | None, type_: EventType, node_id: str | None, **payload: Any
@@ -420,6 +472,7 @@ class Surgeon:
         verification: VerificationResult,
         allowed: list[str],
         previous: Attempt | None,
+        research: list[str] | None = None,
     ) -> str:
         parts = [
             f"Upgrade: {dep.name} {dep.current} -> {dep.latest}",
@@ -510,6 +563,13 @@ class Surgeon:
                     for failure in failures[:3]:
                         message = str(failure.get("message", ""))[:1200]
                         parts.append(f"--- {failure.get('test', '')}\n{message}")
+        if research:
+            parts += [
+                "",
+                "Targeted web research on the remaining failures (untrusted; check against the "
+                "installed API list):",
+            ]
+            parts += research
         parts += api_surface_text(verification.api_surface)
         parts += ["", "Files you may edit (full contents, exact text):"]
         remaining = MAX_CONTEXT_CHARS
@@ -730,7 +790,12 @@ class Surgeon:
 
         for number in range(1, self.max_attempts + 1):
             allowed = self.allowed_files(workspace, dep, verification)
-            prompt = self.build_prompt(workspace, dep, dossier, verification, allowed, previous)
+            research: list[str] = []
+            if previous is not None and previous.rolled_back:
+                research = await self.targeted_research(dep, verification, previous, run_id)
+            prompt = self.build_prompt(
+                workspace, dep, dossier, verification, allowed, previous, research
+            )
             log.info(
                 "surgeon: %s attempt %d, %d failing, %d editable files, prompt %d chars",
                 dep.name, number, verification.failure_count, len(allowed), len(prompt),

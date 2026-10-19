@@ -201,7 +201,9 @@ class Supervisor:
         dossier = await historian.research(dep, run.id, budget)
 
         verifier = Verifier(self.executor, self.bus)
-        surgeon = Surgeon(self.llm, self.router, verifier, self.bus, self.pypi)
+        surgeon = Surgeon(
+            self.llm, self.router, verifier, self.bus, self.pypi, search=self.search
+        )
         surgery = await surgeon.upgrade(workspace, dep, dossier, run.id, budget)
 
         review = None
@@ -242,6 +244,9 @@ class Supervisor:
                     if a.verification else "not verified"
                 )
                 + (f" (rolled back: {a.rollback_reason})" if a.rolled_back else "")
+                + "".join(
+                    f" | rejected {e.path}: {e.reason}" for e in a.edits if e.status == "rejected"
+                )
                 + (
                     " | first error: "
                     + _error_line(a.verification["failures"][0]["message"])[:140]
