@@ -1,93 +1,95 @@
-# nvidXnebi
+# Upshift
 
+**Autonomous dependency upgrades that actually finish the job.**
 
+Upshift points at a repository, finds outdated dependencies, reads the real changelogs and migration guides from the web, rewrites the code that breaks, proves the result in an isolated sandbox, and opens a merge request where every edit is pinned to the changelog line that justified it. Dependabot and Renovate bump versions and leave you a red pipeline. Upshift turns it green.
 
-## Getting started
+Built for the **Nebius x NVIDIA Global AI Hackathon**, Coding and Agentic Engineering track. Powered by **NVIDIA Nemotron 3** (Nano, Super, Ultra, and 3.5 Lightning) served on **Nebius Token Factory**, with **Nebius Serverless Jobs** for sandboxed test execution and **Tavily** for changelog research.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+> Status: Day 0 of 11. Backend core is in place (model router, Token Factory client, event store, SSE API, Tavily tools). Agents, sandbox and UI land over the next days. See [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the full plan.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## How it works
 
-## Add your files
+| Agent | Role | Nemotron model |
+| --- | --- | --- |
+| Scout | Parses manifests, finds outdated packages, maps which symbols your code actually uses | Nano |
+| Historian | Finds and reads changelogs and migration guides (Tavily), classifies breaking changes, intersects them with your usage | 3.5 Lightning (1M context) with Nano fallback |
+| Surgeon | Rewrites affected code, iterates on test failures | Super, escalating to Ultra |
+| Verifier | Installs, runs tests and type checks in an ephemeral sandbox (Docker locally, Nebius Serverless Jobs in the cloud) | deterministic + Nano triage |
+| Reviewer | Adversarial review of the final patch set | Ultra |
+| Scribe | Writes the evidence-linked merge request | Super |
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+Every decision, tool call, token and test result is an append-only event. The UI streams them live and can replay any run.
+
+## Quick start (local, no cloud compute cost)
+
+Requirements: Python 3.11+, Docker Desktop (for the sandbox, from Day 1), Node 20+ (for the UI, from Day 5).
+
+```powershell
+# Windows
+.\scripts\run_local.ps1
+```
+
+```bash
+# macOS / Linux
+./scripts/run_local.sh
+```
+
+Then open http://localhost:8000/docs. Fill in `.env` first:
+
+| Variable | Purpose |
+| --- | --- |
+| `NEBIUS_API_KEY` | Token Factory API key (required for any model call) |
+| `NEBIUS_BASE_URL` | Defaults to `https://api.tokenfactory.us-central1.nebius.com/v1/` |
+| `TAVILY_API_KEY` | Changelog search and extraction |
+| `GITLAB_TOKEN` | Opening merge requests (Day 4) |
+| `DEFAULT_BUDGET_USD` | Per-run spend cap, default 2.00 |
+| `EXECUTOR` | `docker` (default) or `nebius` |
+
+### Verify model capabilities (one-time, a few cents)
+
+```bash
+python scripts/probe_models.py
+```
+
+This tests chat, tool calling, parallel tool calls, JSON mode and JSON Schema on each Nemotron model and writes `config/capabilities.json`. The router only uses capabilities that passed.
+
+### Run the tests (fully mocked, no API calls)
+
+```bash
+pytest -q
+ruff check .
+```
+
+## API (Day 0)
+
+- `GET /api/health`, `GET /api/models`
+- `POST /api/runs` `{repo_url, policy, budget_cap_usd}`
+- `GET /api/runs/{id}`, `GET /api/runs/{id}/events?after=N`
+- `GET /api/runs/{id}/stream` Server-Sent Events, supports `Last-Event-ID` resume
+
+## Project layout
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/nvidxnebi.git
-git branch -M main
-git push -uf origin main
+upshift/
+  api/        FastAPI app, SSE
+  core/       events, SQLite event store, bus, budget
+  llm/        model catalog, routing policy, Token Factory client
+  tools/      Tavily search/extract, tool registry, cache
+config/       models.yaml (IDs, prices), capabilities.json (probe output)
+scripts/      run_local, probe_models
+tests/        mocked unit and API tests
+docs/         BLUEPRINT.md and (soon) ARCHITECTURE, FEEDBACK, SUBMISSION
 ```
 
-## Integrate with your tools
+## Cost and safety
 
-* [Set up project integrations](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/nvidxnebi/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+- Model IDs and prices live in `config/models.yaml`; nothing is hardcoded.
+- Every call records tokens, cost and latency; runs stop at their budget cap.
+- Project code never executes on the host; only inside ephemeral containers or Serverless Jobs.
+- Web content fetched via Tavily is treated as data, never as instructions.
+- No paid Nebius compute is created automatically.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Apache 2.0. See [LICENSE](LICENSE).
