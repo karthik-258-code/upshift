@@ -78,7 +78,9 @@ SYSTEM_PROMPT = (
     "library's behaviour (for example the exception type it raised), update it to the "
     "documented new behaviour and say so in the justification. Fix every failure you can see, "
     "not just the first. Prefer EDIT blocks; use WRITE only when most of a file changes, and "
-    "then include the complete file. Write real newlines, never the characters backslash-n.\n\n"
+    "then include the complete file. Write real newlines, never the characters backslash-n. "
+    "Do not edit version pins in requirements or pyproject files; to add a package, list it "
+    "under NEW_DEPENDENCIES and it will be pinned for you.\n\n"
     + FORMAT_SPEC
 )
 
@@ -304,7 +306,7 @@ class Surgeon:
         verifier: Verifier,
         bus: EventBus | None = None,
         pypi: PyPIClient | None = None,
-        max_attempts: int = 3,
+        max_attempts: int = 5,
     ) -> None:
         self.llm = llm
         self.router = router
@@ -506,8 +508,29 @@ class Surgeon:
                 _write(workspace, rel, content)
 
     @staticmethod
-    def _failing_ids(verification: VerificationResult) -> set[str]:
-        return {f.test for f in verification.failures}
+    def _signatures(verification: VerificationResult) -> set[str]:
+        """Failing test plus its final error line, so a changed error counts as movement.
+
+        Collection errors keep the same test id while the underlying exception changes;
+        comparing ids alone would call real progress "no effect".
+        """
+        signatures = set()
+        for failure in verification.failures:
+            lines = [ln.strip() for ln in failure.message.splitlines() if ln.strip()]
+            error = next((ln for ln in reversed(lines) if ln.startswith("E ")), "")
+            signatures.add(f"{failure.test}|{error or (lines[0] if lines else '')}")
+        return signatures
+
+    @staticmethod
+    def _is_worse(new: VerificationResult, best: VerificationResult) -> bool:
+        """Fewer passing tests is worse; with equal passes, more failures is worse.
+
+        A run that collects 17 tests and fails 4 beats one where a collection error hides
+        everything behind a single error, even though 4 > 1.
+        """
+        if new.passed != best.passed:
+            return new.passed < best.passed
+        return new.failure_count > best.failure_count
 
     # ---- main loop ----------------------------------------------------------
 
@@ -659,12 +682,13 @@ class Surgeon:
             reason = ""
             if verification.phase != "test":
                 reason = f"{verification.phase} phase failed"
-            elif verification.failure_count > best.failure_count:
+            elif self._is_worse(verification, best):
                 reason = (
-                    f"{verification.failure_count} failing vs {best.failure_count} before"
+                    f"worse: {verification.passed} passing, {verification.failure_count} "
+                    f"failing (was {best.passed} passing, {best.failure_count} failing)"
                 )
-            elif self._failing_ids(verification) == self._failing_ids(best):
-                reason = "exactly the same tests still fail; the edits had no effect"
+            elif self._signatures(verification) == self._signatures(best):
+                reason = "exactly the same failures with the same errors; the edits had no effect"
             if reason:
                 self._restore(workspace, snapshot)
                 attempt.rolled_back = True

@@ -276,8 +276,8 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
 
     assert result.success and len(result.attempts) == 4
     reasons = [a.rollback_reason for a in result.attempts]
-    assert "2 failing vs 1 before" in reasons[0]
-    assert "same tests still fail" in reasons[1]
+    assert reasons[0].startswith("worse: 1 passing, 2 failing")
+    assert "same failures" in reasons[1]
     assert reasons[2] == "" and not result.attempts[2].rolled_back  # different failure: progress
     assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
     models = [a.model for a in result.attempts]
@@ -285,6 +285,29 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
     assert models[2:] == [catalog.models["ultra"].id] * 2
     escalations = [e for e in store.events(run.id) if e.type is EventType.ESCALATION]
     assert len(escalations) == 1 and escalations[0].payload["attempt"] == 3
+
+
+async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelCatalog) -> None:
+    """One collection error hiding 17 tests -> 17 collected with 4 failing is progress."""
+    ws = workspace(tmp_path)
+    masked = VerificationResult(
+        ok=False, phase="test", exit_code=2, duration_ms=1, tests=1, passed=0, errors=1,
+        failures=[TestFailure("tests.test_models", "pyshop/models.py:9: in <module>\nE ImportError", "error")],
+    )
+    changed_error = VerificationResult(
+        ok=False, phase="test", exit_code=2, duration_ms=1, tests=1, passed=0, errors=1,
+        failures=[TestFailure("tests.test_models", "pyshop/models.py:30: in <module>\nE TypeError", "error")],
+    )
+    partial = VerificationResult(
+        ok=False, phase="test", exit_code=1, duration_ms=1, tests=17, passed=13, failed=4,
+        failures=[TestFailure(f"t::{i}", "tests/test_models.py:1: E x") for i in range(4)],
+    )
+    verifier = FakeVerifier([masked, changed_error, partial, green()])
+    outputs = [response("a", write_block("pyshop/settings.py", f"V = {i}\n")) for i in range(3)]
+    surgeon, _ = make_surgeon(catalog, outputs, verifier)
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success
+    assert [a.rolled_back for a in result.attempts] == [False, False, False]
 
 
 async def test_unparsable_response_is_recorded(tmp_path: Path, catalog: ModelCatalog) -> None:
