@@ -6,8 +6,10 @@ source files the failures reference, which the Surgeon uses to decide what it ma
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import shlex
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,21 @@ log = logging.getLogger(__name__)
 INSTALL_MARKER = "__UPSHIFT_INSTALL_OK__"
 JUNIT_PATH = ".upshift/junit.xml"
 LOG_PATH = ".upshift/pytest.log"
+API_PATH = ".upshift/api.json"
+
+# Dumps the public top-level names of the installed packages, so agents never have to
+# guess import paths for the new version.
+INTROSPECT_SCRIPT = """import importlib, json, sys
+out = {}
+for name in sys.argv[1:]:
+    try:
+        module = importlib.import_module(name)
+        names = sorted(n for n in dir(module) if not n.startswith('_'))
+        out[name] = {'version': getattr(module, '__version__', None), 'names': names}
+    except Exception as exc:
+        out[name] = {'error': f'{type(exc).__name__}: {exc}'}
+print(json.dumps(out))
+"""
 TRACE_PATH = re.compile(r"((?:[\w.-]+[/\\])*[\w.-]+\.py)(?::\d+|::)")
 
 
@@ -48,6 +65,7 @@ class VerificationResult:
     log_tail: str = ""
     timed_out: bool = False
     backend: str = ""
+    api_surface: dict[str, Any] = field(default_factory=dict)
 
     @property
     def failure_count(self) -> int:
@@ -70,6 +88,10 @@ class VerificationResult:
         data = asdict(self)
         data["failure_count"] = self.failure_count
         data["log_tail"] = self.log_tail[-log_chars:]
+        data["api_surface"] = {
+            module: {"version": info.get("version"), "name_count": len(info.get("names", []))}
+            for module, info in self.api_surface.items()
+        }
         return data
 
 
@@ -93,7 +115,7 @@ def has_installable_project(workspace: Path) -> bool:
     return (workspace / "setup.py").exists()
 
 
-def build_test_command(workspace: Path) -> str:
+def build_test_command(workspace: Path, introspect: list[str] | None = None) -> str:
     requirements = discover_requirements(workspace)
     lines = [
         "set -e",
@@ -108,6 +130,12 @@ def build_test_command(workspace: Path) -> str:
     lines.append("pip install -q pytest")
     lines.append(f"echo {INSTALL_MARKER}")
     lines.append("set +e")
+    if introspect:
+        modules = " ".join(shlex.quote(m) for m in introspect)
+        lines.append("cat > .upshift/introspect.py <<'UPSHIFT_PY'")
+        lines.append(INTROSPECT_SCRIPT.rstrip("\n"))
+        lines.append("UPSHIFT_PY")
+        lines.append(f"python .upshift/introspect.py {modules} > {API_PATH} 2>/dev/null || true")
     lines.append(
         f"python -m pytest -q -p no:cacheprovider --maxfail=50 --junitxml={JUNIT_PATH} "
         f"> {LOG_PATH} 2>&1"
@@ -176,8 +204,9 @@ class Verifier:
         run_id: str | None = None,
         node_id: str | None = None,
         label: str = "verify",
+        introspect: list[str] | None = None,
     ) -> VerificationResult:
-        command = build_test_command(workspace)
+        command = build_test_command(workspace, introspect)
         log.info("verifier: %s (%s, %s)", label, self.executor.name, self.image)
         await self._emit(
             run_id, EventType.SANDBOX_STARTED, node_id, label=label,
@@ -186,9 +215,17 @@ class Verifier:
         result = await self.executor.run(
             ExecutionRequest(
                 workspace=workspace, command=command, timeout_seconds=self.timeout_seconds,
-                image=self.image, collect=[JUNIT_PATH],
+                image=self.image, collect=[JUNIT_PATH, API_PATH],
             )
         )
+        api_surface: dict[str, Any] = {}
+        if API_PATH in result.artifacts:
+            try:
+                parsed = json.loads(result.artifacts[API_PATH])
+                if isinstance(parsed, dict):
+                    api_surface = parsed
+            except json.JSONDecodeError:
+                pass
         if result.timed_out:
             phase = "timeout"
         elif INSTALL_MARKER not in result.stdout:
@@ -217,6 +254,7 @@ class Verifier:
             log_tail=result.tail(6_000),
             timed_out=result.timed_out,
             backend=result.backend,
+            api_surface=api_surface,
         )
         log.info(
             "verifier: %s -> phase=%s exit=%d tests=%d failed=%d errors=%d in %.1fs",

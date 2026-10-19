@@ -202,6 +202,16 @@ class Reviewer:
         if lint:
             parts += ["", "Deterministic lint findings on changed files (already confirmed):"]
             parts += [f"- {f.file}:{f.line} {f.title}" for f in lint]
+        if surgery.api_surface:
+            parts += [
+                "",
+                "Installed public API of the upgraded package (authoritative). Do not claim an "
+                "import path is wrong, or that a method requires an argument, unless this list "
+                "or the diff itself proves it:",
+            ]
+            for module, info in surgery.api_surface.items():
+                names = info.get("names") or []
+                parts.append(f"{module} {info.get('version') or ''}: {', '.join(names[:400])}")
         parts += ["", "Unified diff:", surgery.diff[:MAX_DIFF_CHARS]]
         if len(surgery.diff) > MAX_DIFF_CHARS:
             parts.append(f"... diff truncated ({len(surgery.diff)} chars total)")

@@ -27,6 +27,7 @@ from upshift.core.budget import Budget
 from upshift.core.bus import EventBus
 from upshift.core.events import Event, EventType
 from upshift.ecosystems.python import add_requirement, bump_pin, normalize, parse_requirements
+from upshift.ecosystems.usage import import_names_for
 from upshift.llm.client import TokenFactoryClient, content_of
 from upshift.llm.router import BudgetExhausted, ModelRouter, NoCapableModel, TaskClass
 from upshift.llm.structured import parse_json
@@ -233,13 +234,38 @@ class SurgeryResult:
     final: dict[str, Any] | None = None
     cost_usd: float = 0.0
     error: str | None = None
+    # public API of the upgraded package as actually installed (module -> version, names)
+    api_surface: dict[str, Any] = field(default_factory=dict)
     # original contents of every touched file, kept so later passes can extend the diff
     originals: dict[str, str | None] = field(default_factory=dict, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data.pop("originals", None)
+        data["api_surface"] = {
+            m: {"version": i.get("version"), "name_count": len(i.get("names", []))}
+            for m, i in self.api_surface.items()
+        }
         return data
+
+
+def api_surface_text(api_surface: dict[str, Any], limit: int = 400) -> list[str]:
+    """Prompt lines describing the installed package API, or [] when unknown."""
+    if not api_surface:
+        return []
+    lines = [
+        "",
+        "Installed public API of the upgraded package (authoritative, from the sandbox). "
+        "Import ONLY these top-level names; never guess submodule paths:",
+    ]
+    for module, info in api_surface.items():
+        names = info.get("names") or []
+        if names:
+            version = info.get("version") or ""
+            lines.append(f"{module} {version}: {', '.join(names[:limit])}")
+        else:
+            lines.append(f"{module}: {info.get('error', 'not importable')}")
+    return lines
 
 
 def _outcome(edit: dict[str, Any], path: str, status: str, reason: str = "") -> AppliedEdit:
@@ -448,6 +474,7 @@ class Surgeon:
                     f"The previous attempt was rolled back: {previous.rollback_reason}. "
                     "The files below are back to their pre-attempt state."
                 )
+        parts += api_surface_text(verification.api_surface)
         parts += ["", "Files you may edit (full contents, exact text):"]
         remaining = MAX_CONTEXT_CHARS
         omitted: list[str] = []
@@ -640,10 +667,13 @@ class Surgeon:
             changes=result.manifest_changes,
         )
 
+        introspect = sorted(import_names_for(dep.name))
         verification = await self.verifier.verify(
-            workspace, run_id, node, label=f"{dep.name}: after version bump"
+            workspace, run_id, node, label=f"{dep.name}: after version bump",
+            introspect=introspect,
         )
         result.after_bump = verification.to_dict()
+        result.api_surface = verification.api_surface
         if verification.ok:
             result.success = True
             result.final = result.after_bump
@@ -737,8 +767,11 @@ class Surgeon:
                 continue
 
             verification = await self.verifier.verify(
-                workspace, run_id, node, label=f"{dep.name}: attempt {number}"
+                workspace, run_id, node, label=f"{dep.name}: attempt {number}",
+                introspect=introspect,
             )
+            if verification.api_surface:
+                result.api_surface = verification.api_surface
             attempt.verification = verification.to_dict()
             result.attempts.append(attempt)
             if verification.ok:
@@ -813,13 +846,15 @@ class Surgeon:
                 f"{finding.get('title', '')}. {finding.get('detail', '')} "
                 f"Suggestion: {finding.get('suggestion', '') or 'none'}"
             )
+        lines += api_surface_text(surgery.api_surface)
         lines += ["", "Files you may edit (full contents, exact text):"]
         for rel in allowed:
             lines.append(f"=== {rel} ===\n{_read(workspace, rel) or ''}")
         prompt = "\n".join(lines)
 
+        # polish is a precision task: route like a second attempt (Ultra)
         decision = self.router.route(
-            TaskClass.CODEGEN, attempt=1, budget=budget,
+            TaskClass.CODEGEN, attempt=2, budget=budget,
             min_context_tokens=len(prompt) // 3 + MAX_OUTPUT_TOKENS,
         )
         cost_before = self.llm.total_cost_usd

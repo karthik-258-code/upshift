@@ -47,7 +47,7 @@ class FakeVerifier:
         self.results = results
         self.labels: list[str] = []
 
-    async def verify(self, workspace: Path, run_id=None, node_id=None, label="verify"):
+    async def verify(self, workspace: Path, run_id=None, node_id=None, label="verify", **_):
         self.labels.append(label)
         return self.results.pop(0)
 
