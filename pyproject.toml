@@ -36,6 +36,8 @@ include = ["upshift*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# demo-repos are deliberately legacy code that Upshift upgrades; they are not our style target
+extend-exclude = ["demo-repos"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

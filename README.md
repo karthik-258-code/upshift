@@ -6,7 +6,7 @@ Upshift points at a repository, finds outdated dependencies, reads the real chan
 
 Built for the **Nebius x NVIDIA Global AI Hackathon**, Coding and Agentic Engineering track. Powered by **NVIDIA Nemotron 3** (Nano, Super, Ultra, and 3.5 Lightning) served on **Nebius Token Factory**, with **Nebius Serverless Jobs** for sandboxed test execution and **Tavily** for changelog research.
 
-> Status: Day 0 of 11. Backend core is in place (model router, Token Factory client, event store, SSE API, Tavily tools). Agents, sandbox and UI land over the next days. See [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the full plan.
+> Status: Day 1 of 11. In place: model router with probe-verified capabilities, Token Factory client, event store and SSE API, Tavily tools, Docker sandbox executor, Python manifest parsing, AST symbol-usage scanner, PyPI client, Scout agent, and the `pyshop-legacy` demo repo. Next: Historian, Surgeon, Verifier. See [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the full plan.
 
 ## How it works
 
@@ -61,7 +61,15 @@ pytest -q
 ruff check .
 ```
 
-## API (Day 0)
+## Developer CLI
+
+```bash
+python -m upshift sandbox-check                      # run a trivial job in the Docker sandbox
+python -m upshift scout demo-repos/pyshop-legacy     # dependency assessment table
+python -m upshift scout https://gitlab.com/org/repo --json
+```
+
+## API
 
 - `GET /api/health`, `GET /api/models`
 - `POST /api/runs` `{repo_url, policy, budget_cap_usd}`
@@ -72,14 +80,19 @@ ruff check .
 
 ```
 upshift/
-  api/        FastAPI app, SSE
-  core/       events, SQLite event store, bus, budget
-  llm/        model catalog, routing policy, Token Factory client
-  tools/      Tavily search/extract, tool registry, cache
-config/       models.yaml (IDs, prices), capabilities.json (probe output)
-scripts/      run_local, probe_models
-tests/        mocked unit and API tests
-docs/         BLUEPRINT.md and (soon) ARCHITECTURE, FEEDBACK, SUBMISSION
+  agents/      Scout (more to come: Historian, Surgeon, Verifier, Reviewer, Scribe)
+  api/         FastAPI app, SSE
+  core/        events, SQLite event store, bus, budget, workspace preparation
+  ecosystems/  Python manifest parsing and AST symbol-usage scanner
+  llm/         model catalog, routing policy, Token Factory client
+  sandbox/     executor contract, Docker backend (Nebius Serverless Jobs backend on Day 6)
+  tools/       Tavily search/extract, PyPI client, tool registry, cache
+  cli.py       python -m upshift ...
+config/        models.yaml (IDs, prices), capabilities.json (probe output)
+demo-repos/    pyshop-legacy: realistic outdated project used for demos and evals
+scripts/       run_local, probe_models
+tests/         mocked unit and API tests (real Docker test opt-in via UPSHIFT_DOCKER_TESTS=1)
+docs/          BLUEPRINT.md and (soon) ARCHITECTURE, FEEDBACK, SUBMISSION
 ```
 
 ## Cost and safety
