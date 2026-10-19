@@ -68,6 +68,8 @@ class Run(BaseModel):
     repo_url: str
     policy: str = "balanced"
     budget_cap_usd: float = 2.0
+    packages: list[str] = Field(default_factory=list)  # restrict to these dependencies
+    target_project: str | None = None  # GitLab project path to open merge requests in
     status: RunStatus = RunStatus.QUEUED
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

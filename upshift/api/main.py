@@ -49,6 +49,20 @@ class CreateRunRequest(BaseModel):
     repo_url: str = Field(..., min_length=1)
     policy: Literal["conservative", "balanced", "aggressive"] = "balanced"
     budget_cap_usd: float | None = Field(default=None, gt=0, le=50)
+    packages: list[str] = Field(default_factory=list)
+    target_project: str | None = None
+
+
+async def pipeline_launcher(run: Run, ctx: AppContext) -> None:
+    """Run the real agent chain. Requires Token Factory and Tavily credentials."""
+    from upshift.agents.supervisor import build_supervisor
+    from upshift.sandbox.docker import DockerExecutor
+
+    assert ctx.llm is not None
+    supervisor = build_supervisor(
+        ctx.settings, ctx.store, ctx.bus, ctx.llm, ctx.router, DockerExecutor()
+    )
+    await supervisor.run(run)
 
 
 async def noop_launcher(run: Run, ctx: AppContext) -> None:
@@ -125,7 +139,13 @@ def create_app(
         )
 
     ctx = AppContext(settings, store, bus, catalog, router, llm)
-    launch: Launcher = launcher or noop_launcher
+    launch: Launcher
+    if launcher is not None:
+        launch = launcher
+    elif llm is not None and settings.tavily_api_key:
+        launch = pipeline_launcher
+    else:
+        launch = noop_launcher
     tasks: set[asyncio.Task[None]] = set()
 
     app = FastAPI(title="Upshift", version=__version__)
@@ -154,6 +174,8 @@ def create_app(
             "tavily_configured": bool(settings.tavily_api_key),
             "capabilities_probed": catalog.probed,
             "executor": settings.executor,
+            "gitlab_configured": bool(settings.gitlab_token),
+            "pipeline": "agents" if launch is pipeline_launcher else "noop",
         }
 
     @app.get("/api/models")
@@ -186,6 +208,8 @@ def create_app(
             repo_url=req.repo_url,
             policy=req.policy,
             budget_cap_usd=req.budget_cap_usd or settings.default_budget_usd,
+            packages=req.packages,
+            target_project=req.target_project,
         )
         store.create_run(run)
         coro = guarded(run, launch(run, ctx))

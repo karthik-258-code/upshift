@@ -201,6 +201,61 @@ async def _upgrade(source: str, package: str, keep: bool, budget_usd: float | No
     return 0 if result.success else 1
 
 
+async def _run(
+    source: str,
+    packages: list[str],
+    policy: str,
+    target_project: str | None,
+    budget_usd: float | None,
+) -> int:
+    from upshift.agents.supervisor import build_supervisor
+    from upshift.core.bus import EventBus
+    from upshift.core.events import Run
+    from upshift.core.store import EventStore
+
+    settings = get_settings()
+    if not settings.nebius_api_key or not settings.tavily_api_key:
+        print("NEBIUS_API_KEY and TAVILY_API_KEY must be set in .env", file=sys.stderr)
+        return 2
+    executor = DockerExecutor()
+    if not await executor.available():
+        print("Docker is not available (is Docker Desktop running?)", file=sys.stderr)
+        return 1
+    store = EventStore(settings.runs_db)
+    bus = EventBus(store)
+    catalog = ModelCatalog.load(settings.models_file, settings.capabilities_file)
+    llm = TokenFactoryClient(
+        settings.nebius_api_key, settings.nebius_base_url,
+        timeout=settings.llm_timeout_seconds, max_retries=settings.llm_max_retries,
+    )
+    supervisor = build_supervisor(settings, store, bus, llm, ModelRouter(catalog), executor)
+    run = store.create_run(Run(
+        repo_url=source, policy=policy, packages=packages,
+        budget_cap_usd=budget_usd or settings.default_budget_usd,
+        target_project=target_project,
+    ))
+    print(f"run {run.id} started (events persisted to {settings.runs_db})")
+    summary = await supervisor.run(run)
+    record = store.get_run(run.id)
+    print()
+    status = record.status.value if record else "?"
+    print(
+        f"run {run.id}: {status}  {summary['succeeded']} upgraded, {summary['failed']} failed, "
+        f"${summary['spent_usd']:.4f} of ${summary['budget_cap_usd']:.2f}"
+    )
+    for dep in (record.summary.get("dependencies", []) if record else []):
+        state = "OK " if dep["success"] else "FAIL"
+        mr = dep.get("merge_request_url") or ("(drafted)" if dep.get("merge_request") else "")
+        print(
+            f"  {state} {dep['name']} {dep['current']} -> {dep['target']}  "
+            f"attempts={dep['attempts']} review={dep.get('review_verdict')} "
+            f"${dep['cost_usd']:.4f} {mr}"
+        )
+        if dep.get("error"):
+            print(f"       {dep['error']}")
+    return 0 if summary["succeeded"] or not summary["candidates"] else 1
+
+
 async def _sandbox_check(image: str) -> int:
     executor = DockerExecutor()
     if not await executor.available():
@@ -245,6 +300,15 @@ def main(argv: list[str] | None = None) -> int:
     upgrade.add_argument("--keep", action="store_true", help="keep the patched workspace")
     upgrade.add_argument("--budget", type=float, help="spend cap in USD for this run")
 
+    full = sub.add_parser("run", help="full pipeline: scout, research, patch, review, MR")
+    full.add_argument("source", help="local path or git URL")
+    full.add_argument("--package", action="append", default=[], help="restrict to a package")
+    full.add_argument(
+        "--policy", choices=["conservative", "balanced", "aggressive"], default="balanced"
+    )
+    full.add_argument("--target-project", help="GitLab project path to open MRs in")
+    full.add_argument("--budget", type=float, help="spend cap in USD for this run")
+
     check = sub.add_parser("sandbox-check", help="run a trivial job in the Docker sandbox")
     check.add_argument("--image", default="python:3.12-slim")
 
@@ -261,4 +325,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_research(args.source, args.package, args.json))
     if args.command == "upgrade":
         return asyncio.run(_upgrade(args.source, args.package, args.keep, args.budget))
+    if args.command == "run":
+        return asyncio.run(
+            _run(args.source, args.package, args.policy, args.target_project, args.budget)
+        )
     return asyncio.run(_sandbox_check(args.image))

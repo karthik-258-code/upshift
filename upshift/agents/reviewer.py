@@ -109,7 +109,10 @@ class ReviewReport:
 
     @property
     def actionable(self) -> list[Finding]:
-        return [f for f in self.findings if f.severity in ("blocker", "major") or f.source == "lint"]
+        return [
+            f for f in self.findings
+            if f.severity in ("blocker", "major") or f.source == "lint"
+        ]
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

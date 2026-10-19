@@ -163,8 +163,12 @@ class Scribe:
                 where = f"`{finding.file}`" if finding.file else ""
                 lines.append(f"- [{finding.severity}] {where} {finding.title}".rstrip())
 
-        total = round(dossier.cost_usd + surgery.cost_usd + (review.cost_usd if review else 0), 4)
-        models = sorted({a.model for a in surgery.attempts} | ({dossier.model} if dossier.model else set()))
+        review_cost = review.cost_usd if review else 0.0
+        total = round(dossier.cost_usd + surgery.cost_usd + review_cost, 4)
+        used = {a.model for a in surgery.attempts}
+        if dossier.model:
+            used.add(dossier.model)
+        models = sorted(used)
         lines += [
             "", "## Cost", "",
             f"- Token Factory usage: ${total:.4f} across {', '.join(f'`{m}`' for m in models)}",
