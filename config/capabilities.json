@@ -1,5 +1,5 @@
 {
-  "probed_at": "2026-10-19T10:27:39.098667+00:00",
+  "probed_at": "2026-10-19T10:45:23.025642+00:00",
   "base_url": "https://api.tokenfactory.us-central1.nebius.com/v1/",
   "models": {
     "nvidia/nvidia-nemotron-3-nano-30b-a3b": {
@@ -61,6 +61,21 @@
         "parallel_tool_calls": 517,
         "json_object": 711,
         "json_schema": 511
+      },
+      "notes": {}
+    },
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": {
+      "chat": true,
+      "tool_calling": true,
+      "parallel_tool_calls": true,
+      "json_object": true,
+      "json_schema": true,
+      "latency_ms": {
+        "chat": 2414,
+        "tool_calling": 1058,
+        "parallel_tool_calls": 1595,
+        "json_object": 1230,
+        "json_schema": 1740
       },
       "notes": {}
     }
