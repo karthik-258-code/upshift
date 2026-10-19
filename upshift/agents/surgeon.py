@@ -38,7 +38,9 @@ log = logging.getLogger(__name__)
 
 MAX_CONTEXT_CHARS = 120_000
 MAX_OUTPUT_TOKENS = 24_000
+DEEP_OUTPUT_TOKENS = 32_000  # reasoning tokens count against the budget
 MAX_FAILURES_SHOWN = 12
+THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 WARNING_CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 
 
@@ -142,6 +144,7 @@ def parse_edit_blocks(text: str) -> dict[str, Any]:
 
     Falls back to JSON of the same shape if the model ignored the format.
     """
+    text = THINK_BLOCK.sub("", text)
     lines = text.replace("\r\n", "\n").split("\n")
     analysis: list[str] = []
     deps: list[str] = []
@@ -372,7 +375,7 @@ class Surgeon:
         verifier: Verifier,
         bus: EventBus | None = None,
         pypi: PyPIClient | None = None,
-        max_attempts: int = 8,
+        max_attempts: int = 10,
         search: TavilySearchTool | None = None,
     ) -> None:
         self.llm = llm
@@ -557,6 +560,12 @@ class Surgeon:
                 parts.append(
                     f"The previous attempt was ROLLED BACK: {previous.rollback_reason}. "
                     "The files below are back to their pre-attempt state."
+                )
+                parts.append(
+                    "DEEP ANALYSIS MODE: in ANALYSIS, trace each failing test's execution path "
+                    "through the project code to the exact line that raises or returns the "
+                    "wrong value, state why the previous edit could not have changed that "
+                    "outcome, and only then propose a DIFFERENT change that targets that line."
                 )
                 touched = [
                     f"- {e.path}: {e.justification}" for e in previous.edits
@@ -826,14 +835,19 @@ class Surgeon:
                 )
             last_model = decision.model.id
 
+            stalled = previous is not None and previous.rolled_back
+            if stalled:
+                log.info("surgeon: attempt %d in deep-reasoning mode", number)
             attempt_cost_before = self.llm.total_cost_usd
             try:
                 response = await self.llm.complete(
                     decision.model,
                     [{"role": "system", "content": SYSTEM_PROMPT},
                      {"role": "user", "content": prompt}],
-                    temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS, agent=self.agent,
-                    run_id=run_id, budget=budget, attempt=number,
+                    temperature=0.0,
+                    max_tokens=DEEP_OUTPUT_TOKENS if stalled else MAX_OUTPUT_TOKENS,
+                    thinking=stalled, agent=self.agent, run_id=run_id, budget=budget,
+                    attempt=number,
                 )
             except Exception as exc:  # noqa: BLE001 - recorded, loop continues
                 log.exception("surgeon attempt %d failed", number)

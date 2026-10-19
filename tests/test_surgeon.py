@@ -157,6 +157,16 @@ def test_parse_edit_blocks() -> None:
     assert second["evidence_url"] == ""
 
 
+def test_parse_edit_blocks_strips_think_blocks() -> None:
+    text = (
+        "<think>I could write ### WRITE x.py here but it is only thinking</think>\n"
+        + response("real", write_block("pyshop/settings.py", "OK = 1\n"))
+    )
+    data = parse_edit_blocks(text)
+    assert data["analysis"] == "real"
+    assert [e["path"] for e in data["edits"]] == ["pyshop/settings.py"]
+
+
 def test_parse_edit_blocks_discards_unterminated_block() -> None:
     text = response(
         "cut off",
@@ -420,6 +430,10 @@ async def test_targeted_research_after_rollback(tmp_path: Path, catalog: ModelCa
     result = await surgeon.upgrade(ws, dep(), dossier())
 
     assert result.success and result.attempts[0].rolled_back
+    # the retry after a rollback runs in deep-reasoning mode
+    assert completions.requests[0]["max_tokens"] == 24_000
+    assert completions.requests[1]["max_tokens"] == 32_000
+    assert "DEEP ANALYSIS MODE" in completions.requests[1]["messages"][1]["content"]
     assert fake.queries[0].startswith("pydantic 2 TypeError: final with default")
     assert any("DID NOT RAISE X" in q for q in fake.queries)
     second_prompt = completions.requests[1]["messages"][1]["content"]

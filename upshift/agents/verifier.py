@@ -167,7 +167,7 @@ def parse_junit(xml_text: str) -> dict[str, Any]:
                 message = (child.get("message") or "").strip()
                 body = (child.text or "").strip()
                 text = f"{message}\n{body}".strip() if body and body != message else message
-                failures.append(TestFailure(name, text[:1_500], child.tag))
+                failures.append(TestFailure(name, text[:4_000], child.tag))
     return {
         "tests": tests, "failed": failed, "errors": errors, "skipped": skipped,
         "failures": failures,
