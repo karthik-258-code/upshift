@@ -1,5 +1,5 @@
 {
-  "probed_at": "2026-10-19T10:45:23.025642+00:00",
+  "probed_at": "2026-10-19T14:51:57.849747+00:00",
   "base_url": "https://api.tokenfactory.us-central1.nebius.com/v1/",
   "models": {
     "nvidia/nvidia-nemotron-3-nano-30b-a3b": {
@@ -24,15 +24,22 @@
       "tool_calling": true,
       "parallel_tool_calls": true,
       "json_object": true,
-      "json_schema": true,
+      "json_schema": false,
       "latency_ms": {
-        "chat": 1129,
-        "tool_calling": 901,
-        "parallel_tool_calls": 997,
-        "json_object": 1846,
-        "json_schema": 1531
+        "chat": 3197,
+        "tool_calling": 855,
+        "parallel_tool_calls": 1066,
+        "json_object": 1588,
+        "json_schema": 2137
       },
-      "notes": {}
+      "notes": {
+        "json_schema": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+      },
+      "thinking": {
+        "detected": false,
+        "control": "none",
+        "notes": ""
+      }
     },
     "nvidia/nemotron-3-super-120b-a12b": {
       "chat": true,
@@ -41,13 +48,18 @@
       "json_object": true,
       "json_schema": true,
       "latency_ms": {
-        "chat": 819,
-        "tool_calling": 626,
-        "parallel_tool_calls": 4431,
-        "json_object": 540,
-        "json_schema": 1002
+        "chat": 716,
+        "tool_calling": 717,
+        "parallel_tool_calls": 751,
+        "json_object": 467,
+        "json_schema": 815
       },
-      "notes": {}
+      "notes": {},
+      "thinking": {
+        "detected": true,
+        "control": "chat_template_kwargs",
+        "notes": ""
+      }
     },
     "nvidia/Nemotron-3-Ultra-550b-a55b": {
       "chat": true,
@@ -56,13 +68,18 @@
       "json_object": true,
       "json_schema": true,
       "latency_ms": {
-        "chat": 463,
-        "tool_calling": 513,
-        "parallel_tool_calls": 517,
-        "json_object": 711,
-        "json_schema": 511
+        "chat": 473,
+        "tool_calling": 734,
+        "parallel_tool_calls": 785,
+        "json_object": 1120,
+        "json_schema": 525
       },
-      "notes": {}
+      "notes": {},
+      "thinking": {
+        "detected": false,
+        "control": "none",
+        "notes": ""
+      }
     },
     "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": {
       "chat": true,
@@ -71,13 +88,18 @@
       "json_object": true,
       "json_schema": true,
       "latency_ms": {
-        "chat": 2414,
-        "tool_calling": 1058,
-        "parallel_tool_calls": 1595,
-        "json_object": 1230,
-        "json_schema": 1740
+        "chat": 1048,
+        "tool_calling": 1510,
+        "parallel_tool_calls": 1537,
+        "json_object": 789,
+        "json_schema": 969
       },
-      "notes": {}
+      "notes": {},
+      "thinking": {
+        "detected": true,
+        "control": "chat_template_kwargs",
+        "notes": ""
+      }
     }
   }
 }
