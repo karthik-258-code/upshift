@@ -379,10 +379,15 @@ async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelC
     )
     verifier = FakeVerifier([masked, changed_error, partial, green()])
     outputs = [response("a", write_block("pyshop/settings.py", f"V = {i}\n")) for i in range(3)]
-    surgeon, _ = make_surgeon(catalog, outputs, verifier)
+    surgeon, completions = make_surgeon(catalog, outputs, verifier)
     result = await surgeon.upgrade(ws, dep(), dossier())
     assert result.success
     assert [a.rolled_back for a in result.attempts] == [False, False, False]
+    # collection errors: whole-module guidance, normal budget; once collected: deep mode
+    first = completions.requests[0]
+    assert first["max_tokens"] == 24_000 and "SURGICAL MODE" not in first["messages"][1]["content"]
+    assert "collection (import-time) errors" in first["messages"][1]["content"]
+    assert completions.requests[2]["max_tokens"] == 32_000
 
 
 def test_error_line_cleaning() -> None:
@@ -430,9 +435,11 @@ async def test_targeted_research_after_rollback(tmp_path: Path, catalog: ModelCa
     result = await surgeon.upgrade(ws, dep(), dossier())
 
     assert result.success and result.attempts[0].rolled_back
-    # the retry after a rollback runs in deep-reasoning mode
-    assert completions.requests[0]["max_tokens"] == 24_000
+    # 2 passing / 1 failing is already the endgame: deep mode from the first attempt,
+    # and surgical guidance because tests are running
+    assert completions.requests[0]["max_tokens"] == 32_000
     assert completions.requests[1]["max_tokens"] == 32_000
+    assert "SURGICAL MODE" in completions.requests[0]["messages"][1]["content"]
     assert "DEEP ANALYSIS MODE" in completions.requests[1]["messages"][1]["content"]
     assert fake.queries[0].startswith("pydantic 2 TypeError: final with default")
     assert any("DID NOT RAISE X" in q for q in fake.queries)

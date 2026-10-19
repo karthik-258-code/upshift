@@ -17,6 +17,7 @@ report.xml
 !.env.example
 .data/
 .cache/
+*.log
 
 # Frontend
 web/node_modules/

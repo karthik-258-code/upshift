@@ -375,7 +375,7 @@ class Surgeon:
         verifier: Verifier,
         bus: EventBus | None = None,
         pypi: PyPIClient | None = None,
-        max_attempts: int = 10,
+        max_attempts: int = 12,
         search: TavilySearchTool | None = None,
     ) -> None:
         self.llm = llm
@@ -526,6 +526,15 @@ class Surgeon:
                 "base class, decorator, config object, field constraint and method name that "
                 "the documented changes above cover, in one pass, so the module imports "
                 "cleanly and the tests actually execute."
+            )
+        if verification.passed > 0:
+            parts.append(
+                f"\nSURGICAL MODE: the suite runs and {verification.passed} tests already pass. "
+                f"Only {verification.failure_count} fail. Make the SMALLEST possible EDIT "
+                "blocks that address exactly the failing tests: touch only the lines their "
+                "tracebacks and assertions implicate. Do NOT use WRITE, do NOT restructure or "
+                "'clean up' code, and do NOT change anything a passing test exercises. One "
+                "regression costs more than the fix is worth."
             )
         config = warnings_are_errors(workspace)
         if config:
@@ -836,8 +845,13 @@ class Surgeon:
             last_model = decision.model.id
 
             stalled = previous is not None and previous.rolled_back
-            if stalled:
-                log.info("surgeon: attempt %d in deep-reasoning mode", number)
+            endgame = verification.passed > 0 and verification.failure_count <= 3
+            deep = stalled or endgame
+            if deep:
+                log.info(
+                    "surgeon: attempt %d in deep-reasoning mode (%s)", number,
+                    "stalled" if stalled else "endgame",
+                )
             attempt_cost_before = self.llm.total_cost_usd
             try:
                 response = await self.llm.complete(
@@ -845,8 +859,8 @@ class Surgeon:
                     [{"role": "system", "content": SYSTEM_PROMPT},
                      {"role": "user", "content": prompt}],
                     temperature=0.0,
-                    max_tokens=DEEP_OUTPUT_TOKENS if stalled else MAX_OUTPUT_TOKENS,
-                    thinking=stalled, agent=self.agent, run_id=run_id, budget=budget,
+                    max_tokens=DEEP_OUTPUT_TOKENS if deep else MAX_OUTPUT_TOKENS,
+                    thinking=deep, agent=self.agent, run_id=run_id, budget=budget,
                     attempt=number,
                 )
             except Exception as exc:  # noqa: BLE001 - recorded, loop continues
