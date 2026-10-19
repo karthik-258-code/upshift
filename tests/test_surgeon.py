@@ -53,16 +53,17 @@ class FakeVerifier:
 
 
 class FakeCompletions:
-    def __init__(self, outputs: list[str]) -> None:
+    def __init__(self, outputs: list[Any]) -> None:
         self.outputs = outputs
         self.requests: list[dict[str, Any]] = []
 
     async def create(self, **kwargs: Any) -> ChatCompletion:
         self.requests.append(kwargs)
-        text = self.outputs.pop(0)
+        item = self.outputs.pop(0)
+        text, finish = item if isinstance(item, tuple) else (item, "stop")
         return ChatCompletion(
             id="x", object="chat.completion", created=0, model=kwargs["model"],
-            choices=[Choice(index=0, finish_reason="stop",
+            choices=[Choice(index=0, finish_reason=finish,
                             message=ChatCompletionMessage(role="assistant", content=text))],
             usage=CompletionUsage(
                 prompt_tokens=20_000, completion_tokens=800, total_tokens=20_800
@@ -156,6 +157,44 @@ def test_parse_edit_blocks() -> None:
     assert second["evidence_url"] == ""
 
 
+def test_parse_edit_blocks_discards_unterminated_block() -> None:
+    text = response(
+        "cut off",
+        write_block("pyshop/settings.py", "OK = 1\n"),
+    ) + "### WRITE pyshop/models.py\n<<<<<<< FILE\nclass A:\n    pass\nclass A:\n    pass\n"
+    data = parse_edit_blocks(text)
+    assert [e["path"] for e in data["edits"]] == ["pyshop/settings.py"]
+
+
+async def test_truncated_response_is_discarded(tmp_path: Path, catalog: ModelCatalog) -> None:
+    ws = workspace(tmp_path)
+    f1 = ("t::a", "pyshop/settings.py:1: boom")
+    runaway = (response("x", write_block("pyshop/settings.py", "GARBAGE\n" * 500)), "length")
+    outputs = [runaway, response("ok", write_block("pyshop/settings.py", "GOOD = 1\n"))]
+    surgeon, completions = make_surgeon(catalog, outputs, FakeVerifier([red(f1), green()]))
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success and len(result.attempts) == 2
+    assert result.attempts[0].edits == [] and result.attempts[0].verification is None
+    assert result.attempts[0].analysis.startswith("(truncated output")
+    assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
+    assert "exceeded the output limit" in completions.requests[1]["messages"][1]["content"]
+
+
+async def test_shrink_guard_uses_original_size(tmp_path: Path, catalog: ModelCatalog) -> None:
+    """A corrupted 1000-line file must not block the 30-line rewrite that repairs it."""
+    ws = workspace(tmp_path)  # models.py is 30 lines originally
+    f1 = ("t::a", "pyshop/models.py:1: boom")
+    corrupt = write_block("pyshop/models.py", "JUNK = 1\n" * 1000)
+    repair = write_block("pyshop/models.py", "from pydantic import BaseModel\n" * 28)
+    outputs = [response("a", corrupt), response("b", repair)]
+    verifier = FakeVerifier([red(f1), red(("t::b", "pyshop/models.py:9: other")), green()])
+    surgeon, _ = make_surgeon(catalog, outputs, verifier)
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success
+    assert all(e.status == "applied" for a in result.attempts for e in a.edits)
+    assert (ws / "pyshop" / "models.py").read_text().count("\n") == 28
+
+
 def test_parse_edit_blocks_json_fallback_and_empty() -> None:
     data = parse_edit_blocks('{"analysis": "a", "edits": [{"path": "p"}], "new_dependencies": []}')
     assert data["analysis"] == "a" and data["edits"] == [{"path": "p"}]
@@ -214,7 +253,7 @@ async def test_edit_loop_applies_rejects_succeeds(tmp_path: Path, catalog: Model
     result = await surgeon.upgrade(ws, dep(), dossier(), run_id=run.id, budget=budget)
 
     assert result.success and len(result.attempts) == 1
-    assert result.attempts[0].model == catalog.models["super"].id
+    assert result.attempts[0].model == catalog.models["ultra"].id
     edits = result.attempts[0].edits
     status = {(e.path, e.op): (e.status, e.reason) for e in edits}
     assert status[("pyshop/settings.py", "replace_block")] == ("applied", "")
@@ -308,11 +347,9 @@ async def test_escalates_and_rolls_back(tmp_path: Path, catalog: ModelCatalog) -
     assert "t::b" in second_prompt
     assert reasons[2] == "" and not result.attempts[2].rolled_back  # different failure: progress
     assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
-    models = [a.model for a in result.attempts]
-    assert models[0] == catalog.models["super"].id
-    assert models[1:] == [catalog.models["ultra"].id] * 3
+    assert {a.model for a in result.attempts} == {catalog.models["ultra"].id}
     escalations = [e for e in store.events(run.id) if e.type is EventType.ESCALATION]
-    assert len(escalations) == 1 and escalations[0].payload["attempt"] == 2
+    assert escalations == []  # single tier for code edits: no escalation events
 
 
 async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelCatalog) -> None:

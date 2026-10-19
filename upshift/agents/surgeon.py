@@ -166,6 +166,8 @@ def parse_edit_blocks(text: str) -> dict[str, Any]:
                 else:
                     (second if in_second else first).append(lines[i])
                 i += 1
+            if i >= len(lines):
+                break  # unterminated block (truncated output): discard it
             i += 1  # closing marker
             justification = evidence = ""
             while i < len(lines):
@@ -537,7 +539,13 @@ class Surgeon:
         if previous is not None:
             rejected = [e for e in previous.edits if e.status == "rejected"]
             parts += ["", f"Previous attempt ({previous.model}) analysis: {previous.analysis}"]
-            if not previous.edits:
+            if previous.analysis.startswith("(truncated output"):
+                parts.append(
+                    "Your previous response exceeded the output limit and was DISCARDED in "
+                    "full. Be concise: only the blocks that are needed, each file at most once, "
+                    "no repetition, no commentary inside blocks."
+                )
+            elif not previous.edits:
                 parts.append(
                     "Your previous response contained NO parsable edit blocks. Follow the "
                     "### EDIT / ### WRITE format exactly."
@@ -628,8 +636,11 @@ class Surgeon:
             if not replace.strip():
                 outcomes[index] = _outcome(edit, rel, "rejected", "WRITE with empty content")
                 continue
-            if current is not None:
-                old_lines = current.count("\n") + 1
+            baseline = originals.get(rel) if originals.get(rel) is not None else current
+            if baseline is not None:
+                # compare with the ORIGINAL file: a corrupted current version must not block
+                # the rewrite that repairs it
+                old_lines = baseline.count("\n") + 1
                 new_lines = replace.count("\n") + 1
                 if old_lines > 20 and new_lines < old_lines * SHRINK_LIMIT:
                     outcomes[index] = _outcome(
@@ -834,9 +845,21 @@ class Surgeon:
                 continue
             text = content_of(response)
             finish = response.choices[0].finish_reason if response.choices else None
-            data = parse_edit_blocks(text)
             if finish == "length":
-                log.warning("surgeon: output truncated (%d chars visible)", len(text))
+                # a truncated response is never safe to apply: a cut-off WRITE is garbage
+                log.warning("surgeon: output truncated (%d chars); discarding", len(text))
+                previous = Attempt(
+                    number, decision.model.id,
+                    f"(truncated output: {len(text)} chars, nothing applied) {text[:300]}",
+                    [], None, round(self.llm.total_cost_usd - attempt_cost_before, 6),
+                )
+                result.attempts.append(previous)
+                await self._emit(
+                    run_id, EventType.PATCH_PROPOSED, node, attempt=number,
+                    model=decision.model.id, analysis=previous.analysis, edits=[],
+                )
+                continue
+            data = parse_edit_blocks(text)
 
             snapshot = self._snapshot(workspace, allowed)
             applied = self.apply_edits(workspace, allowed, data["edits"], originals)

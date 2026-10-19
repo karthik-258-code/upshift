@@ -29,8 +29,9 @@ POLICY: dict[TaskClass, list[list[str]]] = {
     TaskClass.RANK: [["lightning", "nano", "super"]],
     TaskClass.TRIAGE: [["lightning", "nano", "super"]],
     TaskClass.INGEST_LONG: [["lightning", "nano", "super"]],
-    # one Super attempt, then Ultra: an Ultra attempt costs cents and converges far faster
-    TaskClass.CODEGEN: [["super", "ultra"], ["ultra", "super"]],
+    # code edits go to Ultra: Super never produced a converging first attempt in practice and
+    # once ran away into 24k tokens of repetition; an Ultra attempt still costs only cents
+    TaskClass.CODEGEN: [["ultra", "super"]],
     TaskClass.REVIEW: [["ultra", "super"]],
     TaskClass.WRITE: [["super", "lightning", "nano"]],
 }

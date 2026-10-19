@@ -21,14 +21,16 @@ def test_unverified_model_is_skipped_after_probe(probed_catalog: ModelCatalog) -
 
 def test_codegen_escalation_ladder(catalog: ModelCatalog) -> None:
     router = ModelRouter(catalog)
-    assert router.route(TaskClass.CODEGEN, attempt=1).model.key == "super"
+    assert router.route(TaskClass.CODEGEN, attempt=1).model.key == "ultra"
     assert router.route(TaskClass.CODEGEN, attempt=2).model.key == "ultra"
     assert router.route(TaskClass.CODEGEN, attempt=3).model.key == "ultra"
     assert router.route(TaskClass.CODEGEN, attempt=9).model.key == "ultra"
 
 
 def test_required_capability_filters_candidates(probed_catalog: ModelCatalog) -> None:
-    decision = ModelRouter(probed_catalog).route(TaskClass.CODEGEN, required_caps={"json_schema"})
+    decision = ModelRouter(probed_catalog).route(TaskClass.WRITE, required_caps={"json_object"})
+    assert decision.model.key == "super"
+    decision = ModelRouter(probed_catalog).route(TaskClass.REVIEW, required_caps={"json_schema"})
     assert decision.model.key == "ultra"
 
 
