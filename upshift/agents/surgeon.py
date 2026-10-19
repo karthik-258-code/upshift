@@ -409,12 +409,17 @@ class Surgeon:
             return result
 
         best_failures = verification.failure_count
+        best_verification = verification
         previous: Attempt | None = None
         last_model: str | None = None
 
         for number in range(1, self.max_attempts + 1):
             allowed = self.allowed_files(workspace, dep, verification)
             prompt = self.build_prompt(workspace, dep, dossier, verification, allowed, previous)
+            log.info(
+                "surgeon: %s attempt %d, %d failing, %d editable files, prompt %d chars",
+                dep.name, number, verification.failure_count, len(allowed), len(prompt),
+            )
             try:
                 decision = self.router.route(
                     TaskClass.CODEGEN, attempt=number, required_caps={"json_schema"},
@@ -492,8 +497,10 @@ class Surgeon:
             if verification.phase == "test" and verification.failure_count > best_failures:
                 self._restore(workspace, snapshot)
                 attempt.rolled_back = True
+                verification = best_verification
             else:
                 best_failures = min(best_failures, verification.failure_count)
+                best_verification = verification
             previous = attempt
 
         result.final = verification.to_dict()

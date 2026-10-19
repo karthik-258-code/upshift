@@ -176,6 +176,7 @@ class Verifier:
         label: str = "verify",
     ) -> VerificationResult:
         command = build_test_command(workspace)
+        log.info("verifier: %s (%s, %s)", label, self.executor.name, self.image)
         await self._emit(
             run_id, EventType.SANDBOX_STARTED, node_id, label=label,
             backend=self.executor.name, image=self.image,
@@ -214,6 +215,10 @@ class Verifier:
             log_tail=result.tail(6_000),
             timed_out=result.timed_out,
             backend=result.backend,
+        )
+        log.info(
+            "verifier: %s -> phase=%s exit=%d tests=%d failed=%d errors=%d in %.1fs",
+            label, phase, result.exit_code, tests, failed, errors, result.duration_ms / 1000,
         )
         await self._emit(
             run_id, EventType.SANDBOX_FINISHED, node_id, label=label,
