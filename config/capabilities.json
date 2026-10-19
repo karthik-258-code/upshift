@@ -1,0 +1,68 @@
+{
+  "probed_at": "2026-10-19T10:27:39.098667+00:00",
+  "base_url": "https://api.tokenfactory.us-central1.nebius.com/v1/",
+  "models": {
+    "nvidia/nvidia-nemotron-3-nano-30b-a3b": {
+      "chat": false,
+      "tool_calling": false,
+      "parallel_tool_calls": false,
+      "json_object": false,
+      "json_schema": false,
+      "latency_ms": {
+        "chat": 2759
+      },
+      "notes": {
+        "chat": "NotFoundError: Error code: 404 - {'detail': 'The model `nvidia/nvidia-nemotron-3-nano-30b-a3b` does not exist.'}",
+        "tool_calling": "skipped: chat failed",
+        "parallel_tool_calls": "skipped: chat failed",
+        "json_object": "skipped: chat failed",
+        "json_schema": "skipped: chat failed"
+      }
+    },
+    "nvidia/Nemotron-3_5-Lightning": {
+      "chat": true,
+      "tool_calling": true,
+      "parallel_tool_calls": true,
+      "json_object": true,
+      "json_schema": true,
+      "latency_ms": {
+        "chat": 1129,
+        "tool_calling": 901,
+        "parallel_tool_calls": 997,
+        "json_object": 1846,
+        "json_schema": 1531
+      },
+      "notes": {}
+    },
+    "nvidia/nemotron-3-super-120b-a12b": {
+      "chat": true,
+      "tool_calling": true,
+      "parallel_tool_calls": true,
+      "json_object": true,
+      "json_schema": true,
+      "latency_ms": {
+        "chat": 819,
+        "tool_calling": 626,
+        "parallel_tool_calls": 4431,
+        "json_object": 540,
+        "json_schema": 1002
+      },
+      "notes": {}
+    },
+    "nvidia/Nemotron-3-Ultra-550b-a55b": {
+      "chat": true,
+      "tool_calling": true,
+      "parallel_tool_calls": true,
+      "json_object": true,
+      "json_schema": true,
+      "latency_ms": {
+        "chat": 463,
+        "tool_calling": 513,
+        "parallel_tool_calls": 517,
+        "json_object": 711,
+        "json_schema": 511
+      },
+      "notes": {}
+    }
+  }
+}
