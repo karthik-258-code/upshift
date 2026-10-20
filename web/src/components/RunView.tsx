@@ -71,8 +71,8 @@ export default function RunView({ runId, readonly }: { runId: string; readonly: 
         <span className="mono text-zinc-300 truncate">{state.repoUrl || run?.repo_url}</span>
         <span className="text-zinc-600">run {runId}</span>
         <span className="text-zinc-600">policy {state.policy}</span>
-        {state.summary?.merge_requests?.length > 0 && (
-          <a className="text-emerald-300 hover:underline" href={state.summary.merge_requests[0]} target="_blank" rel="noreferrer">
+        {(state.summary?.merge_requests?.length ?? 0) > 0 && (
+          <a className="text-emerald-300 hover:underline" href={state.summary!.merge_requests[0]} target="_blank" rel="noreferrer">
             merge request ↗
           </a>
         )}
