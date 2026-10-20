@@ -399,13 +399,19 @@ async def test_noop_attempts_change_the_input(tmp_path: Path, catalog: ModelCata
     f1 = ("t::a", "pyshop/settings.py:1: boom")
     outputs = [
         response("prose only, no blocks"),
+        response("still prose"),  # answer to the nudge for blocks
         response("prose again"),
+        response("and again"),  # nudge
         response("fix", write_block("pyshop/settings.py", "GOOD = 1\n")),
     ]
     surgeon, completions = make_surgeon(catalog, outputs, FakeVerifier([red(f1), green()]))
     result = await surgeon.upgrade(ws, dep(), dossier())
     assert result.success and len(result.attempts) == 3
-    first, second, third = completions.requests[:3]
+    attempts = [r for r in completions.requests if len(r["messages"]) == 2]
+    nudges = [r for r in completions.requests if len(r["messages"]) == 4]
+    assert len(attempts) == 3 and len(nudges) == 2
+    assert "ONLY the ### EDIT / ### WRITE blocks" in nudges[0]["messages"][3]["content"]
+    first, second, third = attempts
     assert first["temperature"] == 0.0
     assert "RETRY NOTICE" not in first["messages"][1]["content"]
     assert second["temperature"] > 0.0
@@ -413,16 +419,62 @@ async def test_noop_attempts_change_the_input(tmp_path: Path, catalog: ModelCata
     assert third["temperature"] > second["temperature"]
 
 
+async def test_nudge_recovers_blocks(tmp_path: Path, catalog: ModelCatalog) -> None:
+    ws = workspace(tmp_path)
+    f1 = ("t::a", "pyshop/settings.py:1: boom")
+    outputs = [
+        response("I would rewrite settings.py like so"),
+        write_block("pyshop/settings.py", "GOOD = 1\n"),  # blocks only, as asked
+    ]
+    surgeon, completions = make_surgeon(catalog, outputs, FakeVerifier([red(f1), green()]))
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success and len(result.attempts) == 1
+    assert len(completions.requests) == 2
+    assert result.attempts[0].analysis.startswith("I would rewrite")
+    assert (ws / "pyshop" / "settings.py").read_text() == "GOOD = 1\n"
+
+
 async def test_noop_circuit_breaker(tmp_path: Path, catalog: ModelCatalog) -> None:
     ws = workspace(tmp_path)
     f1 = ("t::a", "pyshop/settings.py:1: boom")
-    outputs = [response(f"prose {i}") for i in range(8)]
+    outputs = [response(f"prose {i}") for i in range(8)]  # 4 attempts x (call + nudge)
     surgeon, completions = make_surgeon(catalog, outputs, FakeVerifier([red(f1)]))
     surgeon.max_attempts = 8
     result = await surgeon.upgrade(ws, dep(), dossier())
-    assert not result.success
-    assert len(completions.requests) == 4
+    assert not result.success and len(result.attempts) == 4
+    assert len(completions.requests) == 8
     assert result.error == "model produced no usable edits in 4 consecutive attempts"
+
+
+async def test_dead_ends_listed_after_recurring_errors(
+    tmp_path: Path, catalog: ModelCatalog
+) -> None:
+    """An import error that recurs across attempts is named in the prompt as a dead end."""
+    ws = workspace(tmp_path)
+
+    def collection_error(line: str) -> VerificationResult:
+        message = f"pyshop/models.py:9: in <module>\nE {line}"
+        return VerificationResult(
+            ok=False, phase="test", exit_code=2, duration_ms=1, tests=1, passed=0, errors=1,
+            failures=[TestFailure("tests.test_models", message, "error")],
+        )
+
+    final_marked = "TypeError: 'kind' is marked as final and has a default value"
+    verifier = FakeVerifier([
+        collection_error(final_marked),
+        collection_error("ImportError: cannot import name X"),
+        collection_error(final_marked),
+        green(),
+    ])
+    outputs = [response("a", write_block("pyshop/settings.py", f"V = {i}\n")) for i in range(3)]
+    surgeon, completions = make_surgeon(catalog, outputs, verifier)
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success
+    prompts = [r["messages"][1]["content"] for r in completions.requests]
+    assert "DEAD ENDS" not in prompts[0] and "DEAD ENDS" not in prompts[1]
+    assert "DEAD ENDS" in prompts[2] and final_marked in prompts[2]
+    # three collection-error verifications in a row: the third attempt is treated as stalled
+    assert completions.requests[2]["max_tokens"] >= 12_000
 
 
 def test_error_line_cleaning() -> None:
