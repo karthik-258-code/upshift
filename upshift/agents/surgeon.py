@@ -488,7 +488,8 @@ class Surgeon:
             log.warning("surgeon: nudge output truncated (%d chars); discarded", len(follow))
             return fallback, text
         data = parse_edit_blocks(follow)
-        if not data["analysis"]:
+        if data["edits"] and not data["analysis"]:
+            # blocks came back without an ANALYSIS header: keep the first turn's reasoning
             data["analysis"] = fallback["analysis"] or text[:600]
         log.info("surgeon: nudge produced %d edit block(s)", len(data["edits"]))
         return data, follow
