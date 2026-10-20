@@ -31,7 +31,10 @@ log = logging.getLogger(__name__)
 LINT_SELECT = "F401,F811,F821,F841,E402"
 LINT_PATH = ".upshift/lint.json"
 MAX_DIFF_CHARS = 60_000
+MAX_FILE_CHARS = 14_000  # per changed file, when showing full post-edit contents
+MAX_FILES_CHARS = 48_000
 MAX_OUTPUT_TOKENS = 6_000
+AUDITED_KINDS = ("behavior_change", "missed_migration", "weakened_test", "security")
 SEVERITIES = ("blocker", "major", "minor")
 KINDS = (
     "weakened_test", "behavior_change", "compat_shim", "missed_migration", "security",
@@ -211,7 +214,45 @@ class Reviewer:
         raw = result.artifacts.get(LINT_PATH, "")
         return parse_lint(raw)
 
-    # ---- audit of blocking findings -------------------------------------------
+    # ---- changed files, as they are now ---------------------------------------
+
+    @staticmethod
+    def changed_files(workspace: Path, surgery: SurgeryResult) -> dict[str, str]:
+        """Full post-edit contents of the changed Python files, within a size budget.
+
+        Diff hunks alone invite claims like "field X was removed" about code that simply
+        sits outside the hunk; the full file settles that.
+        """
+        files: dict[str, str] = {}
+        total = 0
+        for rel in surgery.files_changed:
+            path = workspace / rel
+            if not rel.endswith(".py") or not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if len(text) > MAX_FILE_CHARS:
+                text = text[:MAX_FILE_CHARS] + "\n... (truncated)\n"
+            if total + len(text) > MAX_FILES_CHARS:
+                break
+            files[rel] = text
+            total += len(text)
+        return files
+
+    @staticmethod
+    def files_section(files: dict[str, str]) -> list[str]:
+        if not files:
+            return []
+        parts = [
+            "",
+            "Changed files AFTER the edits, in full (authoritative for what the code now "
+            "contains; never claim a name, field, decorator or method is missing if it "
+            "appears here):",
+        ]
+        for rel, text in files.items():
+            parts.append(f"=== {rel} ===\n{text}")
+        return parts
+
+    # ---- audit of findings that assert facts -------------------------------------
 
     async def audit(
         self,
@@ -220,6 +261,7 @@ class Reviewer:
         spec: Any,
         run_id: str | None,
         budget: Budget | None,
+        files: dict[str, str] | None = None,
     ) -> Finding:
         """Fact-check one blocking finding in a fresh, focused context.
 
@@ -238,6 +280,7 @@ class Reviewer:
             for module, info in surgery.api_surface.items():
                 names = info.get("names") or []
                 parts.append(f"{module} {info.get('version') or ''}: {', '.join(names[:400])}")
+        parts += self.files_section(files or {})
         parts += ["", "Unified diff:", surgery.diff[:MAX_DIFF_CHARS]]
         try:
             data = await complete_json(
@@ -283,6 +326,7 @@ class Reviewer:
         dossier: ImpactDossier,
         surgery: SurgeryResult,
         lint: list[Finding],
+        files: dict[str, str] | None = None,
     ) -> str:
         before = surgery.after_bump or {}
         after = surgery.final or {}
@@ -317,6 +361,7 @@ class Reviewer:
             for module, info in surgery.api_surface.items():
                 names = info.get("names") or []
                 parts.append(f"{module} {info.get('version') or ''}: {', '.join(names[:400])}")
+        parts += self.files_section(files or {})
         parts += ["", "Unified diff:", surgery.diff[:MAX_DIFF_CHARS]]
         if len(surgery.diff) > MAX_DIFF_CHARS:
             parts.append(f"... diff truncated ({len(surgery.diff)} chars total)")
@@ -341,7 +386,8 @@ class Reviewer:
             await self._emit(run_id, EventType.REVIEW_VERDICT, node, **report.to_dict())
             return report
 
-        prompt = self.build_prompt(dep, dossier, surgery, lint)
+        files = self.changed_files(workspace, surgery)
+        prompt = self.build_prompt(dep, dossier, surgery, lint, files)
         try:
             decision = self.router.route(
                 TaskClass.REVIEW, required_caps={"json_schema"}, budget=budget,
@@ -378,14 +424,17 @@ class Reviewer:
                 suggestion=str(item.get("suggestion", ""))[:1_000],
             )
             finding = calibrate(finding)
-            if finding.severity == "blocker":
-                finding = await self.audit(finding, surgery, decision.model, run_id, budget)
+            factual = finding.severity == "major" and finding.kind in AUDITED_KINDS
+            if finding.severity == "blocker" or factual:
+                finding = await self.audit(
+                    finding, surgery, decision.model, run_id, budget, files
+                )
             findings.append(finding)
         audited = [f for f in findings if f.source == "audit"]
         if audited:
             await self._emit(
                 run_id, EventType.AGENT_MESSAGE, node,
-                message=f"audited {len(audited)} blocking finding(s): " + ", ".join(
+                message=f"audited {len(audited)} finding(s): " + ", ".join(
                     f"{f.file}: {f.audit_status}" for f in audited
                 ),
             )
