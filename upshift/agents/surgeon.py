@@ -16,6 +16,7 @@ from __future__ import annotations
 import difflib
 import logging
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -53,6 +54,13 @@ def error_line(message: str) -> str:
     line = re.sub(r"\S*[/\\]\S+\.py:\d+", "", line)  # drop file paths
     line = re.sub(r"<class '([\w.]+)'>", r"\1", line)
     return re.sub(r"\s+", " ", line).strip()
+
+
+def is_collection_error(verification: VerificationResult) -> bool:
+    """True when nothing ran because a module failed to import."""
+    return bool(verification.failures) and verification.passed == 0 and all(
+        f.kind == "error" for f in verification.failures
+    )
 
 
 def warnings_are_errors(workspace: Path) -> str | None:
@@ -443,6 +451,48 @@ class Surgeon:
                 notes.append(f"- {item.get('title', '')} ({item.get('url', '')}): {snippet}")
         return notes
 
+    async def _nudge_for_blocks(
+        self,
+        spec: Any,
+        prompt: str,
+        text: str,
+        temperature: float,
+        max_tokens: int,
+        run_id: str | None,
+        budget: Budget | None,
+        number: int,
+    ) -> tuple[dict[str, Any], str]:
+        """One follow-up turn when the model analysed but emitted no edit blocks."""
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": text[:12_000]},
+            {"role": "user", "content": (
+                "Your analysis is noted. Now output ONLY the ### EDIT / ### WRITE blocks that "
+                "implement it, in the exact format from the instructions. No further analysis, "
+                "no markdown fences."
+            )},
+        ]
+        fallback = parse_edit_blocks(text)
+        try:
+            response = await self.llm.complete(
+                spec, messages, temperature=temperature, max_tokens=max_tokens,
+                agent=self.agent, run_id=run_id, budget=budget, attempt=number,
+            )
+        except Exception as exc:  # noqa: BLE001 - the attempt simply stays block-less
+            log.warning("surgeon: nudge for blocks failed: %s", exc)
+            return fallback, text
+        follow = content_of(response)
+        finish = response.choices[0].finish_reason if response.choices else None
+        if finish == "length":
+            log.warning("surgeon: nudge output truncated (%d chars); discarded", len(follow))
+            return fallback, text
+        data = parse_edit_blocks(follow)
+        if not data["analysis"]:
+            data["analysis"] = fallback["analysis"] or text[:600]
+        log.info("surgeon: nudge produced %d edit block(s)", len(data["edits"]))
+        return data, follow
+
     async def _emit(
         self, run_id: str | None, type_: EventType, node_id: str | None, **payload: Any
     ) -> None:
@@ -496,6 +546,7 @@ class Surgeon:
         allowed: list[str],
         previous: Attempt | None,
         research: list[str] | None = None,
+        dead_ends: list[str] | None = None,
     ) -> str:
         parts = [
             f"Upgrade: {dep.name} {dep.current} -> {dep.latest}",
@@ -554,6 +605,14 @@ class Surgeon:
                 "'clean up' code, and do NOT change anything a passing test exercises. One "
                 "regression costs more than the fix is worth."
             )
+        if dead_ends:
+            parts.append(
+                "\nDEAD ENDS: the errors below have appeared after two or more different "
+                "attempts. Whatever approach produced them does not work on this version; do "
+                "NOT reproduce it. Pick a different, documented replacement, and make sure the "
+                "module imports cleanly before anything else:"
+            )
+            parts += [f"- {line}" for line in dead_ends]
         config = warnings_are_errors(workspace)
         if config:
             parts.append(
@@ -850,14 +909,21 @@ class Surgeon:
         last_model: str | None = None
         noop_streak = 0  # consecutive attempts that applied nothing
         last_deep = False
+        error_history: Counter[str] = Counter()  # error line -> attempts it appeared after
+        for failure in verification.failures:
+            error_history[error_line(failure.message)] += 1
+        collection_streak = 1 if is_collection_error(verification) else 0
 
         for number in range(1, self.max_attempts + 1):
             allowed = self.allowed_files(workspace, dep, verification)
+            # import errors that keep changing but never clear are circling, not progressing
+            circling = collection_streak >= 2
             research: list[str] = []
-            if previous is not None and previous.rolled_back:
+            if previous is not None and (previous.rolled_back or circling):
                 research = await self.targeted_research(dep, verification, previous, run_id)
+            dead_ends = [line for line, n in error_history.most_common(8) if n >= 2 and line]
             prompt = self.build_prompt(
-                workspace, dep, dossier, verification, allowed, previous, research
+                workspace, dep, dossier, verification, allowed, previous, research, dead_ends
             )
             log.info(
                 "surgeon: %s attempt %d, %d failing, %d editable files, prompt %d chars",
@@ -883,7 +949,7 @@ class Surgeon:
                     f"model produced no usable edits in {noop_streak} consecutive attempts"
                 )
                 break
-            stalled = previous is not None and previous.rolled_back
+            stalled = previous is not None and (previous.rolled_back or circling)
             endgame = verification.passed > 0 and verification.failure_count <= 3
             # never repeat a deep attempt that produced nothing: alternate modes so one
             # runaway reasoning trace cannot be reproduced attempt after attempt
@@ -941,6 +1007,12 @@ class Surgeon:
                 noop_streak += 1
                 continue
             data = parse_edit_blocks(text)
+            if not data["edits"] and text.strip():
+                # analysis without blocks: ask the same model to finish rather than spend a
+                # whole attempt (and a sandbox run) on prose
+                data, text = await self._nudge_for_blocks(
+                    decision.model, prompt, text, temperature, max_tokens, run_id, budget, number
+                )
 
             snapshot = self._snapshot(workspace, allowed)
             applied = self.apply_edits(workspace, allowed, data["edits"], originals)
@@ -984,6 +1056,11 @@ class Surgeon:
             if verification.api_surface:
                 result.api_surface = verification.api_surface
             attempt.verification = verification.to_dict()
+            for failure in verification.failures:
+                error_history[error_line(failure.message)] += 1
+            collection_streak = (
+                collection_streak + 1 if is_collection_error(verification) else 0
+            )
             result.attempts.append(attempt)
             if verification.ok:
                 result.success = True
