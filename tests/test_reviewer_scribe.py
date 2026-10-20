@@ -140,7 +140,11 @@ async def test_review_combines_lint_and_model(tmp_path: Path, catalog: ModelCata
             "title": "test input changed", "detail": "price replaced", "suggestion": "restore",
         }],
     })
-    llm, completions = llm_with([model_output])
+    audit_output = json.dumps({
+        "status": "supported", "reason": "the diff replaces the price payload",
+        "revised_title": "", "revised_detail": "", "revised_severity": "blocker",
+    })
+    llm, completions = llm_with([model_output, audit_output])
     executor = FakeExecutor(LINT_JSON)
     report = await Reviewer(llm, ModelRouter(catalog), executor).review(
         tmp_path, dep(), dossier(), surgery()
@@ -152,6 +156,54 @@ async def test_review_combines_lint_and_model(tmp_path: Path, catalog: ModelCata
     assert "ruff check --select" in executor.requests[0].command
     prompt = completions.requests[0]["messages"][1]["content"]
     assert "F401" in prompt and "Unified diff:" in prompt and "BaseSettings moved" in prompt
+    # every blocker is audited in a fresh, focused context
+    assert len(completions.requests) == 2
+    audit_prompt = completions.requests[1]["messages"][1]["content"]
+    assert "Finding under audit" in audit_prompt and "test input changed" in audit_prompt
+    assert report.blockers[0].source == "audit" and report.blockers[0].audit_status == "supported"
+
+
+async def test_audit_downgrades_contradicted_and_restates_revised(
+    tmp_path: Path, catalog: ModelCatalog
+) -> None:
+    (tmp_path / "pyshop").mkdir()
+    (tmp_path / "pyshop" / "models.py").write_text("x = 1\n")
+    model_output = json.dumps({
+        "verdict": "request_changes", "summary": "two blockers", "confidence": 0.8,
+        "findings": [
+            {"severity": "blocker", "kind": "behavior_change", "file": "pyshop/settings.py",
+             "title": "Field catalog_api_url removed", "detail": "dropped",
+             "suggestion": "restore"},
+            {"severity": "blocker", "kind": "behavior_change", "file": "pyshop/models.py",
+             "title": "validator returns self", "detail": "must return dict",
+             "suggestion": "return values"},
+        ],
+    })
+    revised = json.dumps({
+        "status": "revised", "reason": "the field is present; its default changed",
+        "revised_title": "catalog_api_url default changed without justification",
+        "revised_detail": "default went from /catalog to the bare host",
+        "revised_severity": "major",
+    })
+    contradicted = json.dumps({
+        "status": "contradicted", "reason": "after validators return self in pydantic 2",
+        "revised_title": "", "revised_detail": "", "revised_severity": "minor",
+    })
+    llm, completions = llm_with([model_output, revised, contradicted])
+    report = await Reviewer(llm, ModelRouter(catalog), FakeExecutor("")).review(
+        tmp_path, dep(), dossier(), surgery()
+    )
+    assert len(completions.requests) == 3
+    assert report.blockers == []
+    assert report.verdict == "request_changes"  # the revised major still needs attention
+    audited = {f.file: f for f in report.findings if f.source == "audit"}
+    settings = audited["pyshop/settings.py"]
+    assert settings.severity == "major" and settings.audit_status == "revised"
+    assert settings.title.startswith("catalog_api_url default changed")
+    assert "Audit:" in settings.detail
+    models = audited["pyshop/models.py"]
+    assert models.severity == "minor" and models.kind == "style"
+    assert models.title.endswith("(not supported by the diff)")
 
 
 async def test_review_skipped_when_upgrade_failed(tmp_path: Path, catalog: ModelCatalog) -> None:
