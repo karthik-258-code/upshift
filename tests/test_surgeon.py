@@ -552,14 +552,19 @@ async def test_unparsable_response_is_recorded(tmp_path: Path, catalog: ModelCat
     ws = workspace(tmp_path)
     f1 = ("t::a", "pyshop/settings.py:1: boom")
     surgeon, completions = make_surgeon(
-        catalog, ["I think the fix is obvious.", response("ok", write_block(
-            "pyshop/settings.py", "GOOD = 1\n"))],
+        catalog,
+        [
+            "I think the fix is obvious.",
+            "Still just talking.",  # answer to the nudge for blocks
+            response("ok", write_block("pyshop/settings.py", "GOOD = 1\n")),
+        ],
         FakeVerifier([red(f1), green()]),
     )
     result = await surgeon.upgrade(ws, dep(), dossier())
     assert result.success and len(result.attempts) == 2
     assert result.attempts[0].edits == [] and "no edit blocks" in result.attempts[0].analysis
-    assert "NO parsable edit blocks" in completions.requests[1]["messages"][1]["content"]
+    assert len(completions.requests) == 3  # attempt, nudge, attempt
+    assert "NO parsable edit blocks" in completions.requests[2]["messages"][1]["content"]
 
 
 async def test_gives_up_after_max_attempts(tmp_path: Path, catalog: ModelCatalog) -> None:
