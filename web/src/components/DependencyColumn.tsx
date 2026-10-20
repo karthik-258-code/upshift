@@ -8,7 +8,7 @@ const STATUS_META: Record<DepStatus, { label: string; dot: string; live?: boolea
   patching: { label: "patching", dot: "bg-violet-400", live: true },
   verifying: { label: "verifying", dot: "bg-amber-400", live: true },
   reviewing: { label: "reviewing", dot: "bg-fuchsia-400", live: true },
-  done: { label: "merged request open", dot: "bg-emerald-400" },
+  done: { label: "merge request open", dot: "bg-emerald-400" },
   failed: { label: "not upgraded", dot: "bg-rose-400" },
 };
 
@@ -59,7 +59,7 @@ export default function DependencyColumn({
                   {dep.current ?? "?"} → {dep.latest ?? "?"}
                 </div>
                 <div className="mt-1 flex items-center justify-between text-[11px] text-zinc-500">
-                  <span>{dep.skipReason ?? meta.label}</span>
+                  <span>{dep.skipReason ?? (dep.status === "skipped" ? "not selected by policy" : meta.label)}</span>
                   {symbols > 0 && <span>{symbols} symbols · {dep.usage.files.length} files</span>}
                 </div>
                 {dep.tests && (

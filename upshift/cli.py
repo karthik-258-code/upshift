@@ -210,7 +210,7 @@ async def _run(
     budget_usd: float | None,
 ) -> int:
     from upshift.agents.supervisor import build_supervisor
-    from upshift.core.bus import EventBus
+    from upshift.core.bus import EventBus, usage_publisher
     from upshift.core.events import Run
     from upshift.core.store import EventStore
 
@@ -228,6 +228,7 @@ async def _run(
     llm = TokenFactoryClient(
         settings.nebius_api_key, settings.nebius_base_url,
         timeout=settings.llm_timeout_seconds, max_retries=settings.llm_max_retries,
+        usage_hook=usage_publisher(bus),
     )
     supervisor = build_supervisor(settings, store, bus, llm, ModelRouter(catalog), executor)
     run = store.create_run(Run(

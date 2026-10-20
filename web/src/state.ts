@@ -259,6 +259,9 @@ export function reduce(events: UpshiftEvent[], run?: Run | null): RunState {
     }
   }
 
+  // Runs recorded before llm.call events were emitted on every path: trust the persisted spend.
+  if (state.totalCost === 0 && run?.spent_usd) state.totalCost = run.spent_usd;
+
   // Overlay the persisted per-dependency outcomes (success, error, final diff, MR) when known.
   const outcomes: any[] = run?.summary?.dependencies ?? [];
   for (const outcome of outcomes) {

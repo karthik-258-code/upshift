@@ -2,12 +2,47 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from upshift.llm.client import LLMUsage
+
 import asyncio
 from collections import defaultdict
 from collections.abc import AsyncIterator
 
 from .events import TERMINAL_EVENTS, TERMINAL_STATUSES, Event
 from .store import EventStore
+
+
+def usage_publisher(bus: "EventBus"):
+    """Build a TokenFactoryClient usage hook that records every model call (and budget
+    threshold crossings) as events on the run. Shared by the API and the CLI so cost
+    attribution is identical wherever a run was launched from."""
+    from upshift.core.events import Event, EventType
+
+    async def on_usage(usage: "LLMUsage") -> None:
+        if not usage.run_id:
+            return
+        await bus.publish(
+            Event(
+                run_id=usage.run_id,
+                type=EventType.LLM_CALL,
+                agent=usage.agent,
+                payload=usage.as_dict(),
+            )
+        )
+        for pct in usage.budget_thresholds_crossed:
+            await bus.publish(
+                Event(
+                    run_id=usage.run_id,
+                    type=EventType.BUDGET_WARNING,
+                    agent=usage.agent,
+                    payload={"threshold_pct": pct},
+                )
+            )
+
+    return on_usage
 
 
 class EventBus:

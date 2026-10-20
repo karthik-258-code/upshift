@@ -14,10 +14,10 @@ from pydantic import BaseModel, Field
 
 from upshift import __version__
 from upshift.config import ROOT, Settings, get_settings
-from upshift.core.bus import EventBus
+from upshift.core.bus import EventBus, usage_publisher
 from upshift.core.events import Event, EventType, Run, RunStatus
 from upshift.core.store import EventStore
-from upshift.llm.client import LLMUsage, TokenFactoryClient
+from upshift.llm.client import TokenFactoryClient
 from upshift.llm.models import ModelCatalog
 from upshift.llm.router import ModelRouter
 
@@ -107,26 +107,7 @@ def create_app(
     catalog = ModelCatalog.load(settings.models_file, settings.capabilities_file)
     router = ModelRouter(catalog)
 
-    async def on_usage(usage: LLMUsage) -> None:
-        if not usage.run_id:
-            return
-        await bus.publish(
-            Event(
-                run_id=usage.run_id,
-                type=EventType.LLM_CALL,
-                agent=usage.agent,
-                payload=usage.as_dict(),
-            )
-        )
-        for pct in usage.budget_thresholds_crossed:
-            await bus.publish(
-                Event(
-                    run_id=usage.run_id,
-                    type=EventType.BUDGET_WARNING,
-                    agent=usage.agent,
-                    payload={"threshold_pct": pct},
-                )
-            )
+    on_usage = usage_publisher(bus)
 
     llm: TokenFactoryClient | None = None
     if settings.nebius_api_key:

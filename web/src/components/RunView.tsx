@@ -88,7 +88,7 @@ export default function RunView({ runId, readonly }: { runId: string; readonly: 
 
       {events.length > 0 && (
         <div className="flex items-center gap-3 px-5 py-1.5 border-b border-zinc-900 bg-zinc-950 text-[11px] text-zinc-500 shrink-0">
-          <span className="uppercase tracking-wide">{live ? "live" : cursor === null ? "replay" : `event ${cursor} / ${events.length}`}</span>
+          <span className="uppercase tracking-wide">{live ? "live" : cursor === null ? `complete · ${events.length} events · drag to replay` : `replay · event ${cursor} / ${events.length}`}</span>
           <input
             type="range"
             min={1}
