@@ -1,4 +1,4 @@
-stages: [lint, test]
+stages: [lint, test, build]
 
 default:
   image: python:3.12-slim
@@ -31,3 +31,18 @@ pytest:
     when: always
     reports:
       junit: report.xml
+
+web:
+  stage: build
+  image: node:22-alpine
+  cache:
+    key: npm-$CI_COMMIT_REF_SLUG
+    paths: [web/node_modules]
+  before_script: []
+  script:
+    - cd web
+    - npm install --no-audit --no-fund
+    - npm run build
+  artifacts:
+    paths: [web/dist]
+    expire_in: 1 week
