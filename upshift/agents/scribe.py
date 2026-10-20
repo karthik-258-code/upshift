@@ -8,6 +8,7 @@ the model and falls back to a template if that call fails.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -130,11 +131,15 @@ class Scribe:
         lines += [summary, "", "## What changed", ""]
         lines += [f"- {change}" for change in surgery.manifest_changes]
         by_file: dict[str, list[Any]] = {}
+        changed = set(surgery.files_changed)
         for attempt in surgery.attempts:
             if attempt.rolled_back:
                 continue
             for edit in attempt.edits:
-                if edit.status == "applied" and edit.justification.strip():
+                if (
+                    edit.status == "applied" and edit.justification.strip()
+                    and edit.path in changed  # skip files whose final content is unchanged
+                ):
                     by_file.setdefault(edit.path, []).append(edit)
         if by_file:
             lines += ["", "## Code changes and why", ""]
@@ -147,8 +152,9 @@ class Scribe:
                     text = edit.justification.replace("|", "/").strip()
                     if text not in reasons:
                         reasons.append(text)
-                    if edit.evidence_url and edit.evidence_url not in urls:
-                        urls.append(edit.evidence_url)
+                    for url in re.split(r"[\s,]+", edit.evidence_url or ""):
+                        if url.startswith("http") and url not in urls:
+                            urls.append(url)
                 change = "<br>".join(reasons[-4:])  # most recent justifications win
                 evidence = " ".join(f"[source]({u})" for u in urls[:3])
                 lines.append(f"| `{path}` | {change} | {evidence} |")

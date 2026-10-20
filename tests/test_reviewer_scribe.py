@@ -108,6 +108,20 @@ def surgery(success: bool = True) -> SurgeryResult:
     )
 
 
+def test_calibrate_downgrades_expected_outcome_updates() -> None:
+    from upshift.agents.reviewer import Finding, calibrate
+
+    weakened = Finding("blocker", "weakened_test", "tests/t.py", "test input changed",
+                       "replaced the price payload with an invalid one")
+    assert calibrate(weakened).severity == "blocker"
+
+    outcome = Finding("blocker", "weakened_test", "tests/t.py",
+                      "Test expectation changed from TypeError to ValidationError", "masks change")
+    calibrated = calibrate(outcome)
+    assert calibrated.severity == "minor" and calibrated.kind == "style"
+    assert "expected-outcome update" in calibrated.title
+
+
 def test_parse_lint() -> None:
     findings = parse_lint(LINT_JSON)
     assert [f.title.split()[0] for f in findings] == ["F401", "E402"]

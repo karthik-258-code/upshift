@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shlex
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -68,16 +69,21 @@ SYSTEM_PROMPT = (
     "You are the Reviewer in Upshift, a dependency-upgrade agent. Another agent upgraded one "
     "package and edited code until the test suite passed. You review the resulting diff "
     "adversarially. A green suite is NOT proof of correctness. Look specifically for: tests "
-    "whose inputs or call under test were changed (weakened_test, always a blocker); silent "
-    "behaviour changes versus the original code (behavior_change); deprecated or "
-    "compatibility APIs left in place when the migration guide names a replacement "
-    "(compat_shim); call sites of changed APIs that were not updated and are not covered by "
-    "tests (missed_migration); security regressions; and code quality problems such as "
-    "unused or mid-file imports, empty config objects, or a regex pattern where a Literal "
-    "type is the idiomatic constraint (style, minor). Updating a test's EXPECTED outcome to "
-    "documented new library behaviour is legitimate and must not be flagged. Be concrete: "
-    "name the file and quote the line. Verdict is request_changes if any finding is a "
-    "blocker or major."
+    "whose INPUTS, fixtures or the CALL UNDER TEST were changed so that they no longer "
+    "exercise what they did before (weakened_test, a blocker); silent behaviour changes "
+    "versus the original code (behavior_change); deprecated or compatibility APIs left in "
+    "place when the migration guide names a replacement (compat_shim); call sites of changed "
+    "APIs that were not updated and are not covered by tests (missed_migration); security "
+    "regressions; and code quality problems such as unused or mid-file imports, empty config "
+    "objects, or gratuitous reordering (style, minor).\n"
+    "NOT findings: updating a test's EXPECTED outcome (exception type, message, value) to the "
+    "new library's documented behaviour while its inputs and call are unchanged; raising the "
+    "exception type a library's own validation hooks document (for example ValueError inside "
+    "a validator that the framework wraps); idiomatic use of names present in the installed "
+    "API list. Do not speculate about callers that do not appear in the diff or the tests.\n"
+    "Be concrete: name the file and quote the line. Use approve when the suite is green and "
+    "every remaining concern is minor; reserve request_changes for correctness problems you "
+    "can point to."
 )
 
 
@@ -264,16 +270,15 @@ class Reviewer:
                 continue
             severity = str(item.get("severity", "minor")).lower()
             kind = str(item.get("kind", "other")).lower()
-            findings.append(
-                Finding(
-                    severity=severity if severity in SEVERITIES else "minor",
-                    kind=kind if kind in KINDS else "other",
-                    file=str(item.get("file", "")),
-                    title=str(item.get("title", "")).strip()[:200],
-                    detail=str(item.get("detail", ""))[:1_000],
-                    suggestion=str(item.get("suggestion", ""))[:1_000],
-                )
+            finding = Finding(
+                severity=severity if severity in SEVERITIES else "minor",
+                kind=kind if kind in KINDS else "other",
+                file=str(item.get("file", "")),
+                title=str(item.get("title", "")).strip()[:200],
+                detail=str(item.get("detail", ""))[:1_000],
+                suggestion=str(item.get("suggestion", ""))[:1_000],
             )
+            findings.append(calibrate(finding))
         verdict = str(data.get("verdict", "approve"))
         if any(f.severity in ("blocker", "major") for f in findings):
             verdict = "request_changes"
@@ -287,6 +292,31 @@ class Reviewer:
         )
         await self._emit(run_id, EventType.REVIEW_VERDICT, node, **report.to_dict())
         return report
+
+
+EXPECTED_OUTCOME = re.compile(
+    r"expected (exception|error|outcome|value)|exception type|"
+    r"from \w*(Error|Exception) to \w*(Error|Exception)|"
+    r"\w+Error (instead of|rather than|to) \w+Error",
+    re.IGNORECASE,
+)
+
+
+def calibrate(finding: Finding) -> Finding:
+    """Deterministic guard against the reviewer's most common false positive.
+
+    A test whose expected exception or value was updated is not a weakened test; the prompt
+    says so, but models still report it. Such findings are kept, visibly, as minor notes.
+    """
+    text = f"{finding.title} {finding.detail}"
+    if finding.kind == "weakened_test" and EXPECTED_OUTCOME.search(text):
+        return Finding(
+            severity="minor", kind="style", file=finding.file,
+            title=f"{finding.title} (expected-outcome update; not a weakened test)",
+            detail=finding.detail, suggestion=finding.suggestion, source=finding.source,
+            line=finding.line,
+        )
+    return finding
 
 
 def parse_lint(raw: str) -> list[Finding]:
