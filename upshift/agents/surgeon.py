@@ -40,6 +40,7 @@ MAX_CONTEXT_CHARS = 120_000
 MAX_OUTPUT_TOKENS = 24_000
 DEEP_OUTPUT_TOKENS = 32_000  # reasoning tokens count against the budget
 MAX_FAILURES_SHOWN = 12
+NOOP_LIMIT = 4  # consecutive attempts that applied nothing before the upgrade is abandoned
 THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
 WARNING_CONFIGS = ("pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini")
 
@@ -65,6 +66,23 @@ def warnings_are_errors(workspace: Path) -> str | None:
             return name
     return None
 SHRINK_LIMIT = 0.3  # a rewrite keeping <30% of a >20-line file is almost always truncation
+
+
+def retry_notice(previous: Any, number: int, max_tokens: int) -> str:
+    """Appended to the prompt after an attempt that produced nothing usable.
+
+    Re-sending an identical prompt at temperature 0 reproduces the identical failure; the
+    notice changes the input, names the failure mode, and bounds the response.
+    """
+    what = (getattr(previous, "analysis", "") or "")[:200].replace("\n", " ")
+    return (
+        f"\n\nRETRY NOTICE (attempt {number}): your previous response produced no usable "
+        f"edits. It began: {what!r}. It was cut off, repeated itself, or ignored the format. "
+        f"This time keep the entire response well under {max_tokens} tokens: ANALYSIS in at "
+        "most three sentences, then the fewest EDIT blocks that fix the failures, or exactly "
+        "one WRITE block per file that needs most of its content changed. Never repeat a "
+        "line or an import. Stop immediately after the last block."
+    )
 
 FORMAT_SPEC = """Respond in exactly this plain-text format. No JSON, no markdown fences.
 
@@ -718,6 +736,20 @@ class Surgeon:
         return {rel: _read(workspace, rel) for rel in paths}
 
     @staticmethod
+    def output_budget(workspace: Path, allowed: list[str], deep: bool) -> int:
+        """Output token cap sized to the files the model may edit.
+
+        A complete rewrite of every editable file plus commentary, with headroom; deep mode
+        adds room for the reasoning trace. Bounding the cap this way makes a degenerate,
+        repeating response end sooner and cost a fraction of the unbounded one.
+        """
+        chars = sum(len(_read(workspace, rel) or "") for rel in allowed)
+        estimate = int(chars / 3 * 1.6) + 4_000
+        if deep:
+            return min(DEEP_OUTPUT_TOKENS, max(12_000, estimate + 12_000))
+        return min(MAX_OUTPUT_TOKENS, max(6_000, estimate))
+
+    @staticmethod
     def _restore(workspace: Path, snapshot: dict[str, str | None]) -> None:
         for rel, content in snapshot.items():
             target = workspace / rel
@@ -816,6 +848,8 @@ class Surgeon:
         best = verification
         previous: Attempt | None = None
         last_model: str | None = None
+        noop_streak = 0  # consecutive attempts that applied nothing
+        last_deep = False
 
         for number in range(1, self.max_attempts + 1):
             allowed = self.allowed_files(workspace, dep, verification)
@@ -844,22 +878,39 @@ class Surgeon:
                 )
             last_model = decision.model.id
 
+            if noop_streak >= NOOP_LIMIT:
+                result.error = (
+                    f"model produced no usable edits in {noop_streak} consecutive attempts"
+                )
+                break
             stalled = previous is not None and previous.rolled_back
             endgame = verification.passed > 0 and verification.failure_count <= 3
-            deep = stalled or endgame
+            # never repeat a deep attempt that produced nothing: alternate modes so one
+            # runaway reasoning trace cannot be reproduced attempt after attempt
+            deep = (stalled or endgame) and not (noop_streak and last_deep)
+            temperature = 0.0 if not noop_streak else min(0.3 + 0.2 * noop_streak, 0.9)
+            max_tokens = self.output_budget(workspace, allowed, deep)
+            if noop_streak:
+                prompt += retry_notice(previous, number, max_tokens)
             if deep:
                 log.info(
                     "surgeon: attempt %d in deep-reasoning mode (%s)", number,
                     "stalled" if stalled else "endgame",
                 )
+            if noop_streak:
+                log.info(
+                    "surgeon: attempt %d retry after %d no-op attempt(s): temperature %.1f, "
+                    "max_tokens %d, deep=%s", number, noop_streak, temperature, max_tokens, deep,
+                )
+            last_deep = deep
             attempt_cost_before = self.llm.total_cost_usd
             try:
                 response = await self.llm.complete(
                     decision.model,
                     [{"role": "system", "content": SYSTEM_PROMPT},
                      {"role": "user", "content": prompt}],
-                    temperature=0.0,
-                    max_tokens=DEEP_OUTPUT_TOKENS if deep else MAX_OUTPUT_TOKENS,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                     thinking=deep, agent=self.agent, run_id=run_id, budget=budget,
                     attempt=number,
                 )
@@ -870,6 +921,7 @@ class Surgeon:
                     round(self.llm.total_cost_usd - attempt_cost_before, 6),
                 )
                 result.attempts.append(previous)
+                noop_streak += 1
                 continue
             text = content_of(response)
             finish = response.choices[0].finish_reason if response.choices else None
@@ -886,6 +938,7 @@ class Surgeon:
                     run_id, EventType.PATCH_PROPOSED, node, attempt=number,
                     model=decision.model.id, analysis=previous.analysis, edits=[],
                 )
+                noop_streak += 1
                 continue
             data = parse_edit_blocks(text)
 
@@ -920,7 +973,9 @@ class Surgeon:
             if not any(e.status == "applied" for e in applied):
                 result.attempts.append(attempt)
                 previous = attempt
+                noop_streak += 1
                 continue
+            noop_streak = 0
 
             verification = await self.verifier.verify(
                 workspace, run_id, node, label=f"{dep.name}: attempt {number}",
