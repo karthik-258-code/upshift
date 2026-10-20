@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import shlex
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -81,9 +81,43 @@ SYSTEM_PROMPT = (
     "exception type a library's own validation hooks document (for example ValueError inside "
     "a validator that the framework wraps); idiomatic use of names present in the installed "
     "API list. Do not speculate about callers that do not appear in the diff or the tests.\n"
+    "Compare defaults, validation bounds and signatures line by line: a default value or a "
+    "constraint changed when no documented change requires it is a behavior_change (major). "
+    "Re-adding a removed or deprecated name as a wrapper (for example defining parse_obj to "
+    "call model_validate) is a compat_shim (major). "
     "Be concrete: name the file and quote the line. Use approve when the suite is green and "
     "every remaining concern is minor; reserve request_changes for correctness problems you "
     "can point to."
+)
+
+AUDIT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["supported", "contradicted", "unverifiable", "revised"],
+        },
+        "reason": {"type": "string"},
+        "revised_title": {"type": "string"},
+        "revised_detail": {"type": "string"},
+        "revised_severity": {"type": "string", "enum": list(SEVERITIES)},
+    },
+    "required": ["status", "reason", "revised_title", "revised_detail", "revised_severity"],
+    "additionalProperties": False,
+}
+
+AUDIT_PROMPT = (
+    "You are the Auditor in Upshift. A reviewer raised ONE blocking finding on a "
+    "dependency-upgrade diff. Check that single claim against the evidence and nothing else: "
+    "the unified diff is authoritative for what changed, the installed public API list is "
+    "authoritative for what exists in the new version, and the project's full test suite "
+    "passes after the change. Answer: supported (the diff proves the claim as worded); "
+    "contradicted (the diff or API list disproves it: a name said to be removed is still "
+    "present, a rule the claim asserts about the library is not how the installed version "
+    "behaves, or the test suite exercises exactly that path and passes); unverifiable "
+    "(plausible, but nothing here proves it); or revised (the claim as worded is wrong, but "
+    "the same lines show a different, real problem: restate it precisely with the right "
+    "severity). Quote the lines you rely on. Be literal."
 )
 
 
@@ -95,8 +129,9 @@ class Finding:
     title: str
     detail: str = ""
     suggestion: str = ""
-    source: str = "model"  # model | lint
+    source: str = "model"  # model | lint | audit
     line: int | None = None
+    audit_status: str = ""  # supported | contradicted | unverifiable | revised
 
 
 @dataclass
@@ -175,6 +210,70 @@ class Reviewer:
         )
         raw = result.artifacts.get(LINT_PATH, "")
         return parse_lint(raw)
+
+    # ---- audit of blocking findings -------------------------------------------
+
+    async def audit(
+        self,
+        finding: Finding,
+        surgery: SurgeryResult,
+        spec: Any,
+        run_id: str | None,
+        budget: Budget | None,
+    ) -> Finding:
+        """Fact-check one blocking finding in a fresh, focused context.
+
+        A blocker that the diff contradicts becomes a minor note; one nothing proves becomes
+        major; one that is wrong as worded but points at a real problem is restated.
+        """
+        parts = [
+            f"Finding under audit ({finding.severity}/{finding.kind}) in {finding.file}:",
+            f"Title: {finding.title}",
+            f"Detail: {finding.detail}",
+            "",
+            "The project's full test suite passes after this diff.",
+        ]
+        if surgery.api_surface:
+            parts.append("\nInstalled public API of the upgraded package (authoritative):")
+            for module, info in surgery.api_surface.items():
+                names = info.get("names") or []
+                parts.append(f"{module} {info.get('version') or ''}: {', '.join(names[:400])}")
+        parts += ["", "Unified diff:", surgery.diff[:MAX_DIFF_CHARS]]
+        try:
+            data = await complete_json(
+                self.llm, spec,
+                [{"role": "system", "content": AUDIT_PROMPT},
+                 {"role": "user", "content": "\n".join(parts)}],
+                schema_name="audit", schema=AUDIT_SCHEMA, max_tokens=1_500,
+                agent=self.agent, run_id=run_id, budget=budget,
+            )
+        except Exception as exc:  # noqa: BLE001 - an unaudited blocker stays a blocker
+            log.warning("reviewer: audit failed for %r: %s", finding.title, exc)
+            return finding
+        status = str(data.get("status", ""))
+        reason = str(data.get("reason", ""))[:600]
+        log.info("reviewer: audit of %r -> %s", finding.title, status)
+        if status == "contradicted":
+            return replace(
+                finding, severity="minor", kind="style", source="audit", audit_status=status,
+                title=f"{finding.title} (not supported by the diff)",
+                detail=f"{finding.detail}\nAudit: {reason}",
+            )
+        if status == "unverifiable":
+            return replace(
+                finding, severity="major", source="audit", audit_status=status,
+                detail=f"{finding.detail}\nAudit: unverified. {reason}",
+            )
+        if status == "revised":
+            severity = str(data.get("revised_severity", "major"))
+            return replace(
+                finding, severity=severity if severity in SEVERITIES else "major",
+                source="audit", audit_status=status,
+                title=str(data.get("revised_title") or finding.title).strip()[:200],
+                detail=f"{str(data.get('revised_detail') or finding.detail)[:1_000]}"
+                       f"\nAudit: {reason}",
+            )
+        return replace(finding, source="audit", audit_status="supported")
 
     # ---- model review -------------------------------------------------------
 
@@ -278,7 +377,18 @@ class Reviewer:
                 detail=str(item.get("detail", ""))[:1_000],
                 suggestion=str(item.get("suggestion", ""))[:1_000],
             )
-            findings.append(calibrate(finding))
+            finding = calibrate(finding)
+            if finding.severity == "blocker":
+                finding = await self.audit(finding, surgery, decision.model, run_id, budget)
+            findings.append(finding)
+        audited = [f for f in findings if f.source == "audit"]
+        if audited:
+            await self._emit(
+                run_id, EventType.AGENT_MESSAGE, node,
+                message=f"audited {len(audited)} blocking finding(s): " + ", ".join(
+                    f"{f.file}: {f.audit_status}" for f in audited
+                ),
+            )
         verdict = str(data.get("verdict", "approve"))
         if any(f.severity in ("blocker", "major") for f in findings):
             verdict = "request_changes"
