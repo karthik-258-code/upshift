@@ -283,7 +283,7 @@ async def test_edit_loop_applies_rejects_succeeds(tmp_path: Path, catalog: Model
     assert verifier.labels == ["pydantic: after version bump", "pydantic: attempt 1"]
 
     request = completions.requests[0]
-    assert "response_format" not in request and request["max_tokens"] == 32_000  # endgame
+    assert "response_format" not in request and request["max_tokens"] >= 12_000  # endgame
     assert "### EDIT" in request["messages"][0]["content"]
     prompt = request["messages"][1]["content"]
     assert "=== pyshop/settings.py ===" in prompt and "=== secrets.py ===" not in prompt
@@ -385,12 +385,44 @@ async def test_collection_fix_counts_as_progress(tmp_path: Path, catalog: ModelC
     assert [a.rolled_back for a in result.attempts] == [False, False, False]
     # collection errors: whole-module guidance, normal budget; once collected: deep mode
     first = completions.requests[0]
-    assert first["max_tokens"] == 24_000
+    assert first["max_tokens"] < 12_000  # normal mode: cap sized to the small fixture files
     assert "SURGICAL MODE" not in first["messages"][1]["content"]
     assert "collection (import-time) errors" in first["messages"][1]["content"]
     third = completions.requests[2]  # 13 passing / 4 failing: surgical, not yet endgame
-    assert third["max_tokens"] == 24_000
+    assert third["max_tokens"] < 12_000
     assert "SURGICAL MODE" in third["messages"][1]["content"]
+
+
+async def test_noop_attempts_change_the_input(tmp_path: Path, catalog: ModelCatalog) -> None:
+    """After a response with no usable edits the next call must not be a verbatim retry."""
+    ws = workspace(tmp_path)
+    f1 = ("t::a", "pyshop/settings.py:1: boom")
+    outputs = [
+        response("prose only, no blocks"),
+        response("prose again"),
+        response("fix", write_block("pyshop/settings.py", "GOOD = 1\n")),
+    ]
+    surgeon, completions = make_surgeon(catalog, outputs, FakeVerifier([red(f1), green()]))
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert result.success and len(result.attempts) == 3
+    first, second, third = completions.requests[:3]
+    assert first["temperature"] == 0.0
+    assert "RETRY NOTICE" not in first["messages"][1]["content"]
+    assert second["temperature"] > 0.0
+    assert "RETRY NOTICE (attempt 2)" in second["messages"][1]["content"]
+    assert third["temperature"] > second["temperature"]
+
+
+async def test_noop_circuit_breaker(tmp_path: Path, catalog: ModelCatalog) -> None:
+    ws = workspace(tmp_path)
+    f1 = ("t::a", "pyshop/settings.py:1: boom")
+    outputs = [response(f"prose {i}") for i in range(8)]
+    surgeon, completions = make_surgeon(catalog, outputs, FakeVerifier([red(f1)]))
+    surgeon.max_attempts = 8
+    result = await surgeon.upgrade(ws, dep(), dossier())
+    assert not result.success
+    assert len(completions.requests) == 4
+    assert result.error == "model produced no usable edits in 4 consecutive attempts"
 
 
 def test_error_line_cleaning() -> None:
@@ -440,8 +472,8 @@ async def test_targeted_research_after_rollback(tmp_path: Path, catalog: ModelCa
     assert result.success and result.attempts[0].rolled_back
     # 2 passing / 1 failing is already the endgame: deep mode from the first attempt,
     # and surgical guidance because tests are running
-    assert completions.requests[0]["max_tokens"] == 32_000
-    assert completions.requests[1]["max_tokens"] == 32_000
+    assert completions.requests[0]["max_tokens"] >= 12_000
+    assert completions.requests[1]["max_tokens"] >= 12_000
     assert "SURGICAL MODE" in completions.requests[0]["messages"][1]["content"]
     assert "DEEP ANALYSIS MODE" in completions.requests[1]["messages"][1]["content"]
     assert fake.queries[0].startswith("pydantic 2 TypeError: final with default")
