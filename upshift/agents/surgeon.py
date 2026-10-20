@@ -910,9 +910,11 @@ class Surgeon:
                 edits=applied, verification=None,
                 cost_usd=round(self.llm.total_cost_usd - attempt_cost_before, 6),
             )
+            live_diff, _ = unified_diff(originals, workspace)
             await self._emit(
                 run_id, EventType.PATCH_PROPOSED, node, attempt=number, model=decision.model.id,
                 analysis=attempt.analysis, edits=[asdict(e) for e in applied],
+                diff=live_diff[:60_000],
             )
 
             if not any(e.status == "applied" for e in applied):
