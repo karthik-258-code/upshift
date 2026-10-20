@@ -6,7 +6,7 @@ Upshift points at a repository, finds outdated dependencies, reads the real chan
 
 Built for the **Nebius x NVIDIA Global AI Hackathon**, Coding and Agentic Engineering track. Powered by **NVIDIA Nemotron 3** (Nano, Super, Ultra, and 3.5 Lightning) served on **Nebius Token Factory**, with **Nebius Serverless Jobs** for sandboxed test execution and **Tavily** for changelog research.
 
-> Status: Day 3 of 11. **First fully autonomous upgrade achieved**: pydantic 1.10 -> 2.14 on the demo repo, 17/17 tests green, 4 attempts, 3 minutes, $0.0195 in Token Factory usage ([full record and diff](docs/examples/pyshop-legacy-pydantic.md)). In place: Scout, Historian, Surgeon, Verifier, Docker sandbox, probe-verified model routing with per-model reasoning control. Next: Reviewer, Scribe and merge request creation. See [docs/BLUEPRINT.md](docs/BLUEPRINT.md) for the plan.
+> Status: Day 5 of 11. **The whole chain runs from the browser and ends in a real merge request.** Scout, Historian, Surgeon, Verifier, Reviewer (with an Auditor that fact-checks its own blockers), Scribe and GitLab publishing are in place, and Mission Control streams every event live with replay. Latest showcase MRs on the demo repo: [pydantic 1.10 -> 2.14](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/6) and [SQLAlchemy 1.4 -> 2.1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/7), 17/17 green, $0.03 to $0.15 per upgrade. Day log with the reliability work: [docs/examples/day5-runs.md](docs/examples/day5-runs.md). Next: Nebius Serverless Jobs executor and hosted deployment. Plan: [docs/BLUEPRINT.md](docs/BLUEPRINT.md).
 
 ## How it works
 
@@ -35,14 +35,14 @@ Requirements: Python 3.11+, Docker Desktop (for the sandbox, from Day 1), Node 2
 ./scripts/run_local.sh
 ```
 
-Then open http://localhost:8000/docs. Fill in `.env` first:
+Then open http://localhost:8000 for Mission Control (build it once with `cd web && npm install && npm run build`; the API serves `web/dist`), or http://localhost:8000/docs for the raw API. For UI development with hot reload use `.\scripts\dev_ui.ps1` and open http://localhost:5173. Fill in `.env` first:
 
 | Variable | Purpose |
 | --- | --- |
 | `NEBIUS_API_KEY` | Token Factory API key (required for any model call) |
 | `NEBIUS_BASE_URL` | Defaults to `https://api.tokenfactory.us-central1.nebius.com/v1/` |
 | `TAVILY_API_KEY` | Changelog search and extraction |
-| `GITLAB_TOKEN` | Opening merge requests (Day 4) |
+| `GITLAB_TOKEN` | Opening merge requests in the target project |
 | `DEFAULT_BUDGET_USD` | Per-run spend cap, default 2.00 |
 | `EXECUTOR` | `docker` (default) or `nebius` |
 
