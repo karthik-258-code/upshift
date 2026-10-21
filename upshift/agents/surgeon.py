@@ -1180,7 +1180,9 @@ class Surgeon:
                     f"worse: {verification.passed} passing, {verification.failure_count} "
                     f"failing (was {best.passed} passing, {best.failure_count} failing)"
                 )
-            elif self._signatures(verification) == self._signatures(best):
+            elif verification.failures and (
+                self._signatures(verification) == self._signatures(best)
+            ):
                 reason = "exactly the same failures with the same errors; the edits had no effect"
             if reason:
                 self._restore(workspace, snapshot)

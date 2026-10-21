@@ -41,6 +41,28 @@ for name in sys.argv[1:]:
 print(json.dumps(out))
 """
 TRACE_PATH = re.compile(r"((?:[\w.-]+[/\\])*[\w.-]+\.py)(?::\d+|::)")
+STARTUP_FAILURE = "pytest::startup"
+
+
+def startup_failure(log: str, exit_code: int) -> TestFailure:
+    """pytest died before collecting anything: conftest import error (exit 4), internal error
+    (exit 3), or an interrupted session (exit 2). Nothing reaches the JUnit report, so the
+    traceback in the log becomes the single failure the Surgeon reasons about."""
+    lines = [ln.rstrip() for ln in log.splitlines() if ln.strip()]
+    start = 0
+    for index, line in enumerate(lines):
+        if "ImportError while loading conftest" in line or "Traceback" in line:
+            start = index
+            break
+    body = "\n".join(lines[start:][-60:])
+    error = next(
+        (ln.strip() for ln in reversed(lines) if re.match(r"E?\s*\w*(Error|Exception)\b", ln)),
+        "",
+    )
+    message = f"pytest exited with code {exit_code} before collecting tests\n{body}"
+    if error and not body.rstrip().endswith(error):
+        message += f"\nE {error}"
+    return TestFailure(STARTUP_FAILURE, message[:4_000], "error")
 
 
 @dataclass
@@ -240,6 +262,10 @@ class Verifier:
         failed = int(stats.get("failed", 0))
         errors = int(stats.get("errors", 0))
         skipped_count = int(stats.get("skipped", 0))
+        if phase == "test" and result.exit_code != 0 and tests == 0 and not stats.get("failures"):
+            log_text = result.stdout.split(INSTALL_MARKER, 1)[-1]
+            stats = {**stats, "failures": [startup_failure(log_text, result.exit_code)]}
+            tests, errors = 1, 1
         verification = VerificationResult(
             ok=phase == "test" and result.exit_code == 0,
             phase=phase,
