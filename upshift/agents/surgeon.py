@@ -1081,6 +1081,10 @@ class Surgeon:
                 self._restore(workspace, snapshot)
                 attempt.rolled_back = True
                 attempt.rollback_reason = reason
+                await self._emit(
+                    run_id, EventType.AGENT_MESSAGE, node, attempt=number, rolled_back=True,
+                    message=f"attempt {number} rolled back: {reason}",
+                )
                 verification = best
             else:
                 best = verification
@@ -1176,6 +1180,10 @@ class Surgeon:
                 self._restore(workspace, snapshot)
                 attempt.rolled_back = True
                 attempt.rollback_reason = "polish broke the test suite"
+                await self._emit(
+                    run_id, EventType.AGENT_MESSAGE, node, attempt=attempt.number,
+                    rolled_back=True, message="polish rolled back: it broke the test suite",
+                )
             else:
                 surgery.final = attempt.verification
         surgery.attempts.append(attempt)

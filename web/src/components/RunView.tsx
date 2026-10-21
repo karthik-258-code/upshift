@@ -57,6 +57,18 @@ export default function RunView({ runId, readonly }: { runId: string; readonly: 
   const dep = selected ? state.deps[selected] ?? null : null;
   const deps = state.order.map((n) => state.deps[n]);
   const live = state.status === "running" && cursor === null;
+
+  // elapsed clock: ticks while running, freezes at run.finished
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (state.status !== "running") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [state.status]);
+  const startedMs = state.started ? Date.parse(state.started) : null;
+  const endMs = state.finished ? Date.parse(state.finished) : now;
+  const elapsed = startedMs ? Math.max(0, Math.floor((endMs - startedMs) / 1000)) : null;
+  const clock = elapsed === null ? "" : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
   const title = `${state.status === "running" ? "● " : ""}Upshift · ${state.repoUrl.split(/[\\/]/).pop() ?? runId}`;
   useEffect(() => {
     document.title = title;
@@ -71,6 +83,7 @@ export default function RunView({ runId, readonly }: { runId: string; readonly: 
         <span className="mono text-zinc-300 truncate">{state.repoUrl || run?.repo_url}</span>
         <span className="text-zinc-600">run {runId}</span>
         <span className="text-zinc-600">policy {state.policy}</span>
+        {clock && <span className="mono text-zinc-400" title="elapsed">{clock}</span>}
         {(state.summary?.merge_requests?.length ?? 0) > 0 && (
           <a className="text-emerald-300 hover:underline" href={state.summary!.merge_requests[0]} target="_blank" rel="noreferrer">
             merge request ↗

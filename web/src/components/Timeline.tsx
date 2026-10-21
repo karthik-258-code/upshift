@@ -24,6 +24,7 @@ function describe(e: UpshiftEvent): { title: string; detail?: string; tone?: str
     case "dep.discovered":
       return { title: `${p.name} ${p.current ?? "?"} → ${p.latest ?? "?"} · ${p.bump} · risk ${p.risk}`, detail: p.skip_reason ?? (p.risk_factors ?? []).join("; ") };
     case "agent.message":
+      if (p.rolled_back) return { title: p.message ?? "attempt rolled back", tone: "amber" };
       return { title: p.message ?? "", detail: Array.isArray(p.candidates) ? `candidates: ${p.candidates.join(", ")}` : undefined };
     case "tool.call":
       return { title: `web search: “${p.query}”`, detail: `${p.results} results${p.cached ? " (cached)" : ""}${p.error ? ` · ${p.error}` : ""}` };

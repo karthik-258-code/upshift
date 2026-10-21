@@ -32,6 +32,7 @@ export default function Launch({ readonly }: { readonly: boolean }) {
   const [target, setTarget] = useState(DEMO.target_project);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hideFailed, setHideFailed] = useState(false);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => setHealth(null));
@@ -128,10 +129,16 @@ export default function Launch({ readonly }: { readonly: boolean }) {
       </section>
 
       <section>
-        <h2 className="text-sm uppercase tracking-wide text-zinc-500">Recent runs</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm uppercase tracking-wide text-zinc-500">Recent runs <span className="text-zinc-600">({runs.length})</span></h2>
+          <label className="flex items-center gap-1.5 text-xs text-zinc-500 cursor-pointer">
+            <input type="checkbox" checked={hideFailed} onChange={(e) => setHideFailed(e.target.checked)} className="accent-emerald-400" />
+            hide failed
+          </label>
+        </div>
         <ul className="mt-3 divide-y divide-zinc-800 border border-zinc-800 rounded-md overflow-hidden">
           {runs.length === 0 && <li className="px-4 py-6 text-sm text-zinc-500">No runs yet. Start one on the left.</li>}
-          {runs.map((run) => {
+          {runs.filter((run) => !hideFailed || run.status !== "failed").map((run) => {
             const deps: any[] = run.summary?.dependencies ?? [];
             const ok = deps.filter((d) => d.success).length;
             return (

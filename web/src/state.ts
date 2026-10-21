@@ -23,6 +23,7 @@ export type Attempt = {
   diff: string;
   tests?: any;
   kind?: string;
+  rolledBack?: string;
 };
 
 export type DepState = {
@@ -179,6 +180,9 @@ export function reduce(events: UpshiftEvent[], run?: Run | null): RunState {
           }
         }
         if (dep && p.message) dep.lastMessage = p.message;
+        if (dep && p.rolled_back && p.attempt !== undefined) {
+          attemptOf(dep, Number(p.attempt)).rolledBack = String(p.message ?? "rolled back").replace(/^.*rolled back:\s*/, "");
+        }
         if (dep && p.title && p.description) dep.mergeRequest = { ...(dep.mergeRequest ?? {}), ...p };
         break;
       }

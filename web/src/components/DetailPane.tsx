@@ -79,18 +79,28 @@ function Attempts({ dep }: { dep: DepState }) {
         const a = dep.attempts[n];
         const applied = a.edits.filter((e: any) => e.status === "applied");
         const t = a.tests;
+        const truncated = a.analysis.startsWith("(truncated output");
+        const noOutput = n > 0 && applied.length === 0 && a.rejected.length === 0;
         return (
-          <li key={n} className="rounded-md border border-zinc-800 p-3">
-            <div className="flex items-center gap-2 text-xs">
+          <li key={n} className={`rounded-md border p-3 ${a.rolledBack ? "border-amber-500/30 bg-amber-500/5" : noOutput ? "border-zinc-800 opacity-70" : "border-zinc-800"}`}>
+            <div className="flex items-center gap-2 text-xs flex-wrap">
               <span className="mono text-zinc-400">#{n}</span>
               <span className="text-zinc-200">{n === 0 ? "manifest" : a.kind === "polish" ? "polish" : shortModel(a.model)}</span>
-              <span className="text-zinc-500">{applied.length} applied · {a.rejected.length} rejected</span>
+              {noOutput ? (
+                <span className="px-1.5 py-0.5 rounded border border-zinc-700 text-zinc-400 text-[10px] uppercase">{truncated ? "truncated, nothing applied" : "no usable output"}</span>
+              ) : (
+                <span className="text-zinc-500">{applied.length} applied · {a.rejected.length} rejected</span>
+              )}
+              {a.rolledBack && (
+                <span className="px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-300 text-[10px] uppercase" title={a.rolledBack}>rolled back</span>
+              )}
               {t && (
                 <span className={`ml-auto mono ${t.ok ? "text-emerald-300" : "text-rose-300"}`}>
                   {t.passed} passing / {t.failure_count} failing
                 </span>
               )}
             </div>
+            {a.rolledBack && <p className="mt-1 text-xs text-amber-300/80">{a.rolledBack}</p>}
             {a.analysis && <p className="mt-1.5 text-xs text-zinc-400 line-clamp-4">{a.analysis}</p>}
             {applied.length > 0 && (
               <ul className="mt-2 space-y-1">
@@ -131,9 +141,14 @@ function Review({ dep }: { dep: DepState }) {
       <ul className="mt-3 space-y-2">
         {(r.findings ?? []).map((f: any, i: number) => (
           <li key={i} className="rounded-md border border-zinc-800 p-3 text-xs">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className={`px-1.5 py-0.5 rounded border text-[10px] uppercase ${f.severity === "blocker" ? "text-rose-300 border-rose-500/40" : f.severity === "major" ? "text-amber-300 border-amber-500/40" : "text-zinc-400 border-zinc-700"}`}>{f.severity}</span>
               <span className="text-zinc-500">{f.kind}{f.source === "lint" ? " · ruff" : ""}</span>
+              {f.audit_status && (
+                <span className={`px-1.5 py-0.5 rounded border text-[10px] uppercase ${f.audit_status === "supported" ? "text-rose-300 border-rose-500/30" : f.audit_status === "contradicted" ? "text-emerald-300 border-emerald-500/30" : f.audit_status === "revised" ? "text-sky-300 border-sky-500/30" : "text-zinc-400 border-zinc-700"}`} title="The Auditor fact-checked this finding against the diff, the installed API and the full files">
+                  audit: {f.audit_status}
+                </span>
+              )}
               <span className="mono text-zinc-300 ml-auto">{f.file}{f.line ? `:${f.line}` : ""}</span>
             </div>
             <div className="mt-1 text-zinc-200">{f.title}</div>
