@@ -214,13 +214,20 @@ async def _run(
     from upshift.core.events import Run
     from upshift.core.store import EventStore
 
+    from upshift.sandbox.factory import build_executor
+
     settings = get_settings()
     if not settings.nebius_api_key or not settings.tavily_api_key:
         print("NEBIUS_API_KEY and TAVILY_API_KEY must be set in .env", file=sys.stderr)
         return 2
-    executor = DockerExecutor()
+    executor = build_executor(settings)
     if not await executor.available():
-        print("Docker is not available (is Docker Desktop running?)", file=sys.stderr)
+        hint = (
+            "Docker is not available (is Docker Desktop running?)"
+            if executor.name == "docker"
+            else "Nebius executor unavailable: check NEBIUS_ACCEPT_CHARGES and NEBIUS_* settings"
+        )
+        print(hint, file=sys.stderr)
         return 1
     store = EventStore(settings.runs_db)
     bus = EventBus(store)

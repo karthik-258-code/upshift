@@ -56,11 +56,11 @@ class CreateRunRequest(BaseModel):
 async def pipeline_launcher(run: Run, ctx: AppContext) -> None:
     """Run the real agent chain. Requires Token Factory and Tavily credentials."""
     from upshift.agents.supervisor import build_supervisor
-    from upshift.sandbox.docker import DockerExecutor
+    from upshift.sandbox.factory import build_executor
 
     assert ctx.llm is not None
     supervisor = build_supervisor(
-        ctx.settings, ctx.store, ctx.bus, ctx.llm, ctx.router, DockerExecutor()
+        ctx.settings, ctx.store, ctx.bus, ctx.llm, ctx.router, build_executor(ctx.settings)
     )
     await supervisor.run(run)
 

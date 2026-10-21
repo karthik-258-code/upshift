@@ -29,8 +29,27 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120.0
     llm_max_retries: int = 4
     tavily_cache_ttl_hours: float = 72.0
-    executor: str = "docker"
+    executor: str = "docker"  # docker | nebius
     log_level: str = "INFO"
+
+    # Nebius Serverless AI Jobs executor (EXECUTOR=nebius). Paid compute: nothing is created
+    # unless NEBIUS_ACCEPT_CHARGES=1. Auth is a user token or the service-account trio.
+    nebius_accept_charges: bool = False
+    nebius_project_id: str = ""
+    nebius_subnet_id: str = ""
+    nebius_jobs_platform: str = ""
+    nebius_jobs_preset: str = ""
+    nebius_jobs_api: str = "https://api.nebius.cloud/ai/v1"
+    nebius_iam_token: str = ""
+    nebius_sa_id: str = ""
+    nebius_sa_key_id: str = ""
+    nebius_sa_private_key_file: str = ""
+    nebius_token_exchange_url: str = "https://auth.eu.nebius.com:443/oauth2/token/exchange"
+    nebius_s3_endpoint: str = ""
+    nebius_s3_bucket: str = ""
+    nebius_s3_region: str = "eu-west2"
+    nebius_s3_access_key: str = ""
+    nebius_s3_secret_key: str = ""
 
     @property
     def runs_db(self) -> Path:
