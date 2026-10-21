@@ -56,6 +56,29 @@ def error_line(message: str) -> str:
     return re.sub(r"\s+", " ", line).strip()
 
 
+CONFLICT_PATTERN = re.compile(
+    r"depends on ([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(?:[<>=!~][^\s,;]*)?"
+)
+
+
+def conflicting_pins(log: str, manifest_text: str, manifest: str, upgraded: str) -> list[str]:
+    """Pinned packages that pip's resolver names as incompatible with the upgraded one.
+
+    pip prints lines like `flask 3.1.2 depends on Werkzeug>=3.1` under "The conflict is
+    caused by". Only packages pinned in the same requirements file are returned, in order of
+    first mention; anything unpinned pip can already resolve by itself.
+    """
+    if not manifest.endswith(".txt"):
+        return []
+    pinned = {d.name for d in parse_requirements(manifest_text, manifest) if d.pinned}
+    found: list[str] = []
+    for match in CONFLICT_PATTERN.finditer(log):
+        name = normalize(match.group(1))
+        if name != normalize(upgraded) and name in pinned and name not in found:
+            found.append(name)
+    return found
+
+
 def is_collection_error(verification: VerificationResult) -> bool:
     """True when nothing ran because a module failed to import."""
     return bool(verification.failures) and verification.passed == 0 and all(
@@ -523,6 +546,49 @@ class Surgeon:
         _write(workspace, manifest, add_requirement(text, requirement))
         return f"added {requirement} to {manifest}"
 
+    async def _co_upgrade_conflicts(
+        self,
+        workspace: Path,
+        dep: DependencyAssessment,
+        verification: VerificationResult,
+        result: SurgeryResult,
+        run_id: str | None,
+        node: str,
+        introspect: list[str],
+    ) -> VerificationResult:
+        """Upgrading Flask drags Werkzeug and Jinja2 along: when pip refuses the install
+        because of other pins in the same file, bump those pins to their latest release and
+        try the install once more."""
+        assert self.pypi is not None
+        text = _read(workspace, dep.source) or ""
+        names = conflicting_pins(verification.log_tail, text, dep.source, dep.name)
+        if not names:
+            return verification
+        changes: list[str] = []
+        for name in names:
+            info = await self.pypi.info(name)
+            if not info or not info.latest:
+                continue
+            text = _read(workspace, dep.source) or ""
+            updated, changed = bump_pin(text, name, info.latest)
+            if changed:
+                _write(workspace, dep.source, updated)
+                changes.append(
+                    f"{name} co-upgraded to {info.latest} in {dep.source} "
+                    f"(pip: incompatible with {dep.name} {dep.latest})"
+                )
+        if not changes:
+            return verification
+        result.manifest_changes.extend(changes)
+        log.info("surgeon: %s: co-upgrading %s after pip conflict", dep.name, ", ".join(names))
+        await self._emit(
+            run_id, EventType.PATCH_PROPOSED, node, attempt=0, kind="manifest", changes=changes,
+        )
+        return await self.verifier.verify(
+            workspace, run_id, node,
+            label=f"{dep.name}: after co-upgrading {', '.join(names)}", introspect=introspect,
+        )
+
     # ---- context ------------------------------------------------------------
 
     def allowed_files(
@@ -891,6 +957,10 @@ class Surgeon:
             workspace, run_id, node, label=f"{dep.name}: after version bump",
             introspect=introspect,
         )
+        if verification.phase == "install" and self.pypi is not None:
+            verification = await self._co_upgrade_conflicts(
+                workspace, dep, verification, result, run_id, node, introspect
+            )
         result.after_bump = verification.to_dict()
         result.api_surface = verification.api_surface
         if verification.ok:

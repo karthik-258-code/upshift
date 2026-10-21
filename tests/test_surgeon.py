@@ -477,6 +477,59 @@ async def test_dead_ends_listed_after_recurring_errors(
     assert completions.requests[2]["max_tokens"] >= 12_000
 
 
+async def test_install_conflict_co_upgrades_pinned_transitives(
+    tmp_path: Path, catalog: ModelCatalog
+) -> None:
+    """pip refuses Flask 3 next to pinned Werkzeug 2 / Jinja2 3.0: both pins are bumped."""
+    from upshift.agents.surgeon import conflicting_pins
+
+    ws = workspace(tmp_path)
+    (ws / "requirements.txt").write_text(
+        "Flask==2.0.3\nWerkzeug==2.0.3\nJinja2==3.0.3\nrequests==2.28.2\n"
+    )
+    pip_log = (
+        "ERROR: Cannot install -r requirements.txt (line 1) and Werkzeug==2.0.3 because "
+        "these package versions have conflicting dependencies.\n\nThe conflict is caused by:\n"
+        "    The user requested Werkzeug==2.0.3\n    flask 3.1.2 depends on Werkzeug>=3.1\n"
+        "    The user requested Jinja2==3.0.3\n    flask 3.1.2 depends on Jinja2>=3.1.2\n"
+        "    flask 3.1.2 depends on click>=8.1.3\n"
+    )
+    assert conflicting_pins(pip_log, (ws / "requirements.txt").read_text(), "requirements.txt",
+                            "flask") == ["werkzeug", "jinja2"]  # click is not pinned
+    conflict = VerificationResult(
+        ok=False, phase="install", exit_code=1, duration_ms=1, log_tail=pip_log
+    )
+    verifier = FakeVerifier([conflict, green()])
+    surgeon, _ = make_surgeon(catalog, [], verifier)
+
+    class PinnedPyPI:
+        async def info(self, name: str) -> PackageInfo | None:
+            latest = {"werkzeug": "3.1.3", "jinja2": "3.1.6"}.get(name)
+            return PackageInfo(name, latest, [latest]) if latest else None
+
+    surgeon.pypi = PinnedPyPI()
+    flask = DependencyAssessment(
+        name="flask", source="requirements.txt", specifier="==2.0.3", current="2.0.3",
+        latest="3.1.2", bump="major", risk=0.7, usage={"files": [], "symbols": {}},
+    )
+    flask_dossier = ImpactDossier(
+        package="flask", current="2.0.3", target="3.1.2", sources=[], search_queries=[],
+        summary="", requires_new_dependencies=[], entries=[],
+    )
+    result = await surgeon.upgrade(ws, flask, flask_dossier)
+    assert result.success
+    text = (ws / "requirements.txt").read_text()
+    assert "Flask==3.1.2" in text and "Werkzeug==3.1.3" in text and "Jinja2==3.1.6" in text
+    assert "requests==2.28.2" in text
+    assert [c for c in result.manifest_changes if "co-upgraded" in c] == [
+        "werkzeug co-upgraded to 3.1.3 in requirements.txt (pip: incompatible with flask 3.1.2)",
+        "jinja2 co-upgraded to 3.1.6 in requirements.txt (pip: incompatible with flask 3.1.2)",
+    ]
+    assert verifier.labels == [
+        "flask: after version bump", "flask: after co-upgrading werkzeug, jinja2",
+    ]
+
+
 def test_error_line_cleaning() -> None:
     from upshift.agents.surgeon import error_line
 
