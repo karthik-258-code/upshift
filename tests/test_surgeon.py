@@ -505,7 +505,10 @@ async def test_install_conflict_co_upgrades_pinned_transitives(
         "these package versions have conflicting dependencies.\nERROR: ResolutionImpossible"
     )
     assert conflicting_pins(quiet, manifest_text, "requirements.txt", "flask") == ["werkzeug"]
-    swapped = "ERROR: Cannot install Jinja2==3.0.3 and -r requirements.txt (line 1) because these package versions have conflicting dependencies."
+    swapped = (
+        "ERROR: Cannot install Jinja2==3.0.3 and -r requirements.txt (line 1) because these "
+        "package versions have conflicting dependencies."
+    )
     assert conflicting_pins(swapped, manifest_text, "requirements.txt", "flask") == ["jinja2"]
     conflict = VerificationResult(
         ok=False, phase="install", exit_code=1, duration_ms=1, log_tail=pip_log
