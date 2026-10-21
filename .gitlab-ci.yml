@@ -1,4 +1,4 @@
-stages: [lint, test, build]
+stages: [lint, test, build, deploy]
 
 default:
   image: python:3.12-slim
@@ -46,3 +46,17 @@ web:
   artifacts:
     paths: [web/dist]
     expire_in: 1 week
+
+# Mission Control in recorded-replay mode, served by GitLab Pages at $0: the runs under
+# web/public/runs/ (written by `python -m upshift export`) are bundled into the build.
+pages:
+  stage: deploy
+  image: node:22-alpine
+  needs: [web]
+  before_script: []
+  script:
+    - rm -rf public && mv web/dist public
+  artifacts:
+    paths: [public]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

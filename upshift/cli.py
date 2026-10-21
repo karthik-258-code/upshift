@@ -262,6 +262,44 @@ async def _run(
     return 0 if summary["succeeded"] or not summary["candidates"] else 1
 
 
+def _export(out: str, ids: list[str], succeeded: int, failed: int) -> int:
+    """Write runs and their event logs as static JSON for the replay-only site."""
+    from upshift.core.events import RunStatus
+    from upshift.core.store import EventStore
+
+    settings = get_settings()
+    store = EventStore(settings.runs_db)
+    chosen: list[str] = list(ids)
+    recent = store.list_runs(limit=200)
+    for status, count in ((RunStatus.SUCCEEDED, succeeded), (RunStatus.FAILED, failed)):
+        picked = [r.id for r in recent if r.status is status and r.id not in chosen][:count]
+        chosen.extend(picked)
+    if not chosen:
+        print("nothing to export: pass --ids or --succeeded/--failed", file=sys.stderr)
+        return 1
+    out_dir = Path(out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index: list[dict] = []
+    for run_id in chosen:
+        run = store.get_run(run_id)
+        if run is None:
+            print(f"unknown run {run_id}", file=sys.stderr)
+            continue
+        events = [e.model_dump(mode="json") for e in store.events(run_id)]
+        record = run.model_dump(mode="json")
+        (out_dir / f"{run_id}.json").write_text(
+            json.dumps({"run": record, "events": events}), encoding="utf-8"
+        )
+        index.append(record)
+        print(f"exported {run_id}: {run.status.value}, {len(events)} events")
+    index.sort(key=lambda r: r["created_at"], reverse=True)
+    (out_dir / "index.json").write_text(
+        json.dumps({"runs": index, "static": True}), encoding="utf-8"
+    )
+    print(f"index.json: {len(index)} run(s) -> {out_dir}")
+    return 0
+
+
 async def _sandbox_check(image: str) -> int:
     executor = DockerExecutor()
     if not await executor.available():
@@ -318,6 +356,12 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("sandbox-check", help="run a trivial job in the Docker sandbox")
     check.add_argument("--image", default="python:3.12-slim")
 
+    export = sub.add_parser("export", help="export runs as static JSON for the replay site")
+    export.add_argument("--out", default="web/public/runs")
+    export.add_argument("--ids", nargs="*", default=[], help="run ids to export")
+    export.add_argument("--succeeded", type=int, default=0, help="N most recent succeeded")
+    export.add_argument("--failed", type=int, default=0, help="N most recent failed")
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=get_settings().log_level,
@@ -335,4 +379,6 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(
             _run(args.source, args.package, args.policy, args.target_project, args.budget)
         )
+    if args.command == "export":
+        return _export(args.out, args.ids, args.succeeded, args.failed)
     return asyncio.run(_sandbox_check(args.image))

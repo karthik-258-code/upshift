@@ -59,20 +59,61 @@ async function json<T>(input: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Static replay mode. When the API is not reachable (GitLab Pages, or any static host),
+ * runs are read from `runs/index.json` and `runs/<id>.json` written by `upshift export`.
+ * Detected once per page load; relative paths keep it working under a Pages subpath.
+ */
+let staticMode: Promise<boolean> | null = null;
+
+export function isStatic(): Promise<boolean> {
+  if (staticMode === null) {
+    staticMode = fetch("api/health", { headers: { Accept: "application/json" } })
+      .then((r) => !(r.ok && (r.headers.get("content-type") ?? "").includes("json")))
+      .catch(() => true);
+  }
+  return staticMode;
+}
+
+const STATIC_HEALTH: Health = {
+  status: "static",
+  version: "replay",
+  nebius_configured: false,
+  tavily_configured: false,
+  gitlab_configured: false,
+  capabilities_probed: true,
+  executor: "recorded",
+  pipeline: "noop",
+};
+
+type StaticRun = { run: Run; events: UpshiftEvent[] };
+const staticCache = new Map<string, Promise<StaticRun>>();
+
+function staticRun(id: string): Promise<StaticRun> {
+  if (!staticCache.has(id)) staticCache.set(id, json<StaticRun>(`runs/${id}.json`));
+  return staticCache.get(id)!;
+}
+
 export const api = {
-  health: () => json<Health>("/api/health"),
-  models: () => json<{ probed: boolean; models: ModelInfo[] }>("/api/models"),
-  runs: () => json<{ runs: Run[] }>("/api/runs"),
-  run: (id: string) => json<Run>(`/api/runs/${id}`),
-  events: (id: string, after = 0) =>
-    json<{ events: UpshiftEvent[] }>(`/api/runs/${id}/events?after=${after}`),
-  createRun: (body: {
+  health: async () => ((await isStatic()) ? STATIC_HEALTH : json<Health>("api/health")),
+  models: () => json<{ probed: boolean; models: ModelInfo[] }>("api/models"),
+  runs: async () =>
+    (await isStatic()) ? json<{ runs: Run[] }>("runs/index.json") : json<{ runs: Run[] }>("api/runs"),
+  run: async (id: string) => ((await isStatic()) ? (await staticRun(id)).run : json<Run>(`api/runs/${id}`)),
+  events: async (id: string, after = 0) =>
+    (await isStatic())
+      ? { events: (await staticRun(id)).events.filter((e) => e.seq > after) }
+      : json<{ events: UpshiftEvent[] }>(`api/runs/${id}/events?after=${after}`),
+  createRun: async (body: {
     repo_url: string;
     policy: string;
     budget_cap_usd?: number;
     packages: string[];
     target_project?: string | null;
-  }) => json<Run>("/api/runs", { method: "POST", body: JSON.stringify(body) }),
+  }) => {
+    if (await isStatic()) throw new Error("This is a recorded replay; run Upshift locally to start new runs.");
+    return json<Run>("api/runs", { method: "POST", body: JSON.stringify(body) });
+  },
 };
 
 /**
@@ -86,7 +127,15 @@ export async function streamEvents(
   onEvent: (event: UpshiftEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`/api/runs/${runId}/stream?after=${after}`, {
+  if (await isStatic()) {
+    const { events } = await staticRun(runId);
+    for (const event of events) {
+      if (signal.aborted) return;
+      if (event.seq > after) onEvent(event);
+    }
+    return;
+  }
+  const response = await fetch(`api/runs/${runId}/stream?after=${after}`, {
     headers: { Accept: "text/event-stream" },
     signal,
   });

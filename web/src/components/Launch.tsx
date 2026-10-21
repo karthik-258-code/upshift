@@ -71,6 +71,19 @@ export default function Launch({ readonly }: { readonly: boolean }) {
           request where every edit links to the line of documentation that justified it.
         </p>
 
+        {readonly && (
+          <div className="mt-8 rounded-md border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-300">
+            <p>
+              You are looking at <span className="text-emerald-300">recorded runs</span>: every event,
+              model call, sandbox result, diff and review below happened exactly as shown. Pick a run on
+              the right and drag the replay slider.
+            </p>
+            <p className="mt-2 text-zinc-500">
+              To launch new upgrades, run Upshift locally (README: Quick start) or point it at your own
+              repository with <span className="mono">python -m upshift run &lt;repo&gt;</span>.
+            </p>
+          </div>
+        )}
         {!readonly && (
           <form onSubmit={submit} className="mt-8 space-y-4">
             <label className="block">
