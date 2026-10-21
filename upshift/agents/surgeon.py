@@ -976,7 +976,13 @@ class Surgeon:
             result.cost_usd = round(self.llm.total_cost_usd - cost_before, 6)
             return result
         if verification.phase in ("install", "timeout", "no-tests"):
-            result.error = f"cannot iterate: {verification.phase} phase failed after bump"
+            tail = " | ".join(
+                ln.strip() for ln in verification.log_tail.splitlines()[-12:] if ln.strip()
+            )
+            result.error = (
+                f"cannot iterate: {verification.phase} phase failed after bump. "
+                f"Sandbox output: {tail[-900:]}"
+            )
             result.final = result.after_bump
             result.diff, result.files_changed = unified_diff(originals, workspace)
             return result
