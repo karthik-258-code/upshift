@@ -957,10 +957,16 @@ class Surgeon:
             workspace, run_id, node, label=f"{dep.name}: after version bump",
             introspect=introspect,
         )
-        if verification.phase == "install" and self.pypi is not None:
-            verification = await self._co_upgrade_conflicts(
+        # pip may report conflicts one package at a time: give the co-upgrade a few rounds
+        for _ in range(3):
+            if verification.phase != "install" or self.pypi is None:
+                break
+            retried = await self._co_upgrade_conflicts(
                 workspace, dep, verification, result, run_id, node, introspect
             )
+            if retried is verification:
+                break
+            verification = retried
         result.after_bump = verification.to_dict()
         result.api_surface = verification.api_surface
         if verification.ok:
