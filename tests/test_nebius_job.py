@@ -79,10 +79,13 @@ class FakeJobsApi:
             state = self.states.pop(0) if len(self.states) > 1 else self.states[0]
             if state in ("COMPLETED", "FAILED") and self.result is not None:
                 # the container uploads its result through the presigned PUT URL
-                env = {e["name"]: e["value"] for e in self.created["spec"]["environmentVariables"]}
+                variables = self.created["spec"]["environmentVariables"]
+                env = {e["name"]: e["value"] for e in variables}
                 key = env["UPSHIFT_RESULT_URL"].split("storage.test/")[1].split("?")[0]
                 self.storage.put(key, json.dumps(self.result).encode())
-            return httpx.Response(200, json={"metadata": {"id": "job-123"}, "status": {"state": state}})
+            return httpx.Response(
+                200, json={"metadata": {"id": "job-123"}, "status": {"state": state}}
+            )
         if request.method == "GET" and path == "/ai/v1/jobs":
             return httpx.Response(200, json={"items": []})
         if request.method == "POST" and path == "/ai/v1/jobs/cancel":
@@ -92,7 +95,9 @@ class FakeJobsApi:
         return httpx.Response(404, json={"message": f"unexpected {request.method} {path}"})
 
 
-def make_executor(api: FakeJobsApi, *, accept: bool = True, boot: int = 600) -> NebiusJobsExecutor:
+def make_executor(
+    api: FakeJobsApi, *, accept: bool = True, boot: int = 600
+) -> NebiusJobsExecutor:
     config = JobsConfig(
         project_id="project-e00test", subnet_id="vpcsubnet-e00test", platform="cpu-test",
         preset="4vcpu-16gb", poll_interval_seconds=0, boot_allowance_seconds=boot,
@@ -140,7 +145,10 @@ async def test_round_trip_through_presigned_urls(tmp_path: Path) -> None:
     storage = FakeStorage()
     api = FakeJobsApi(
         storage,
-        result={"exit": 0, "log": "17 passed in 2.1s\n", "artifacts": {".upshift/result.json": "{}"}},
+        result={
+            "exit": 0, "log": "17 passed in 2.1s\n",
+            "artifacts": {".upshift/result.json": "{}"},
+        },
     )
     executor = make_executor(api)
     request = ExecutionRequest(
@@ -164,7 +172,10 @@ async def test_round_trip_through_presigned_urls(tmp_path: Path) -> None:
     assert spec["subnetId"] == "vpcsubnet-e00test"
     assert spec["timeout"] == "1200s"  # command timeout + boot allowance
     assert spec["disk"] == {"type": "NETWORK_SSD", "sizeBytes": str(20 * 1024**3)}
-    injected = {f["containerPath"]: base64.b64decode(f["content"]).decode() for f in spec["injectedFiles"]}
+    injected = {
+        f["containerPath"]: base64.b64decode(f["content"]).decode()
+        for f in spec["injectedFiles"]
+    }
     assert injected[SCRIPT_PATH] == JOB_SCRIPT
     assert json.loads(injected[SPEC_PATH]) == {
         "command": request.command, "collect": [".upshift/result.json", ".upshift/api.json"],
@@ -220,7 +231,9 @@ async def test_service_account_token_exchange_and_caching() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
-        return httpx.Response(200, json={"access_token": "sa-token", "token_type": "Bearer", "expires_in": 43200})
+        return httpx.Response(
+            200, json={"access_token": "sa-token", "token_type": "Bearer", "expires_in": 43200}
+        )
 
     def signer(claims: dict[str, Any], pem: str, kid: str) -> str:
         signed.append({**claims, "kid": kid, "pem": pem})
