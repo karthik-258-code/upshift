@@ -134,6 +134,28 @@ async def test_verify_detects_install_phase_and_timeout(tmp_path: Path) -> None:
     assert green.ok and green.phase == "test"
 
 
+async def test_conftest_import_error_becomes_startup_failure(tmp_path: Path) -> None:
+    """pytest exit 4 with nothing collected: the traceback is the failure."""
+    log = (
+        f"{INSTALL_MARKER}\n"
+        "ImportError while loading conftest '/work/tests/conftest.py'.\n"
+        "tests/conftest.py:3: in <module>\n"
+        "    from notes import create_app\n"
+        "notes/__init__.py:7: in <module>\n"
+        "    from flask import Flask, abort, escape, jsonify, request\n"
+        "E   ImportError: cannot import name 'escape' from 'flask' "
+        "(/usr/local/lib/python3.12/site-packages/flask/__init__.py)\n"
+    )
+    result = await Verifier(FakeExecutor(ExecutionResult(4, log, "", 5))).verify(tmp_path)
+    assert result.phase == "test" and not result.ok
+    assert result.tests == 1 and result.errors == 1 and result.failure_count == 1
+    failure = result.failures[0]
+    assert failure.test == "pytest::startup" and failure.kind == "error"
+    assert "exited with code 4" in failure.message
+    assert "cannot import name 'escape'" in failure.message
+    assert result.referenced_files() == ["tests/conftest.py", "notes/__init__.py"]
+
+
 def test_bump_pin_and_add_requirement() -> None:
     text = (
         "pydantic==1.10.13\nSQLAlchemy==1.4.49  # db\nrequests>=2.28\n"
