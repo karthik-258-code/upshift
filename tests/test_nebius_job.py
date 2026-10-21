@@ -221,8 +221,9 @@ async def test_failed_job_without_result(tmp_path: Path) -> None:
 
 async def test_creation_error_is_surfaced(tmp_path: Path) -> None:
     api = FakeJobsApi(FakeStorage(), create_status=429)
+    request = ExecutionRequest(workspace=workspace(tmp_path), command="true")
     with pytest.raises(SandboxError, match="job creation failed: 429"):
-        await make_executor(api).run(ExecutionRequest(workspace=workspace(tmp_path), command="true"))
+        await make_executor(api).run(request)
 
 
 async def test_service_account_token_exchange_and_caching() -> None:

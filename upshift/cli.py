@@ -213,7 +213,6 @@ async def _run(
     from upshift.core.bus import EventBus, usage_publisher
     from upshift.core.events import Run
     from upshift.core.store import EventStore
-
     from upshift.sandbox.factory import build_executor
 
     settings = get_settings()
