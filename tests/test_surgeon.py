@@ -494,8 +494,19 @@ async def test_install_conflict_co_upgrades_pinned_transitives(
         "    The user requested Jinja2==3.0.3\n    flask 3.1.2 depends on Jinja2>=3.1.2\n"
         "    flask 3.1.2 depends on click>=8.1.3\n"
     )
-    assert conflicting_pins(pip_log, (ws / "requirements.txt").read_text(), "requirements.txt",
-                            "flask") == ["werkzeug", "jinja2"]  # click is not pinned
+    manifest_text = (ws / "requirements.txt").read_text()
+    assert conflicting_pins(pip_log, manifest_text, "requirements.txt", "flask") == [
+        "werkzeug", "jinja2",
+    ]  # click is not pinned here
+    # quiet-mode pip prints only the summary: the (line N) reference is Flask itself, the
+    # other token is the pinned culprit
+    quiet = (
+        "ERROR: Cannot install -r requirements.txt (line 1) and Werkzeug==2.0.3 because "
+        "these package versions have conflicting dependencies.\nERROR: ResolutionImpossible"
+    )
+    assert conflicting_pins(quiet, manifest_text, "requirements.txt", "flask") == ["werkzeug"]
+    swapped = "ERROR: Cannot install Jinja2==3.0.3 and -r requirements.txt (line 1) because these package versions have conflicting dependencies."
+    assert conflicting_pins(swapped, manifest_text, "requirements.txt", "flask") == ["jinja2"]
     conflict = VerificationResult(
         ok=False, phase="install", exit_code=1, duration_ms=1, log_tail=pip_log
     )

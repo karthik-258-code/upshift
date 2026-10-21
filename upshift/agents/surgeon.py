@@ -59,21 +59,44 @@ def error_line(message: str) -> str:
 CONFLICT_PATTERN = re.compile(
     r"depends on ([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*(?:[<>=!~][^\s,;]*)?"
 )
+CANNOT_INSTALL_PATTERN = re.compile(
+    r"Cannot install (.+?) because these package versions", re.IGNORECASE
+)
+LINE_REF_PATTERN = re.compile(r"-r\s+(\S+)\s+\(line\s+(\d+)\)")
+PACKAGE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def conflicting_pins(log: str, manifest_text: str, manifest: str, upgraded: str) -> list[str]:
     """Pinned packages that pip's resolver names as incompatible with the upgraded one.
 
-    pip prints lines like `flask 3.1.2 depends on Werkzeug>=3.1` under "The conflict is
-    caused by". Only packages pinned in the same requirements file are returned, in order of
-    first mention; anything unpinned pip can already resolve by itself.
+    Two shapes are understood. With `-q` pip prints only the summary line
+    `Cannot install -r requirements.txt (line 1) and click==8.0.4 because ...`, where a
+    `(line N)` reference points at a line of the requirements file. In verbose mode it adds
+    `flask 3.1.2 depends on Werkzeug>=3.1` lines under "The conflict is caused by". Only
+    packages pinned in the same requirements file are returned, in order of first mention;
+    anything unpinned pip can already resolve by itself.
     """
     if not manifest.endswith(".txt"):
         return []
-    pinned = {d.name for d in parse_requirements(manifest_text, manifest) if d.pinned}
+    deps = parse_requirements(manifest_text, manifest)
+    pinned = {d.name for d in deps if d.pinned}
+    by_line = {d.line: d.name for d in deps if d.pinned and d.line is not None}
+    candidates: list[str] = []
+    for match in CANNOT_INSTALL_PATTERN.finditer(log):
+        for token in re.split(r",\s*|\s+and\s+", match.group(1)):
+            token = token.strip()
+            ref = LINE_REF_PATTERN.match(token)
+            if ref:
+                same_file = PurePosixPath(ref.group(1)).name == PurePosixPath(manifest).name
+                if same_file and int(ref.group(2)) in by_line:
+                    candidates.append(by_line[int(ref.group(2))])
+                continue
+            name = PACKAGE_TOKEN.match(token)
+            if name:
+                candidates.append(normalize(name.group(0)))
+    candidates += [normalize(m.group(1)) for m in CONFLICT_PATTERN.finditer(log)]
     found: list[str] = []
-    for match in CONFLICT_PATTERN.finditer(log):
-        name = normalize(match.group(1))
+    for name in candidates:
         if name != normalize(upgraded) and name in pinned and name not in found:
             found.append(name)
     return found
@@ -957,8 +980,8 @@ class Surgeon:
             workspace, run_id, node, label=f"{dep.name}: after version bump",
             introspect=introspect,
         )
-        # pip may report conflicts one package at a time: give the co-upgrade a few rounds
-        for _ in range(3):
+        # pip reports conflicts one package at a time in quiet mode: allow several rounds
+        for _ in range(6):
             if verification.phase != "install" or self.pypi is None:
                 break
             retried = await self._co_upgrade_conflicts(
