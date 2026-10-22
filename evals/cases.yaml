@@ -1,0 +1,35 @@
+# Upgrade cases for `python -m upshift eval`. Each is run through the real pipeline
+# (Scout -> Historian -> Surgeon -> Verifier -> Reviewer -> Scribe) without publishing a
+# merge request. `expect` is what a correct outcome looks like, used for the pass/fail column.
+
+cases:
+  - id: pyshop-pydantic
+    repo: demo-repos/pyshop-legacy
+    package: pydantic
+    expect: upgraded
+    note: >-
+      v1 -> v2 rewrite: validators, Config -> model_config, __root__ -> RootModel,
+      BaseSettings split into pydantic-settings, const removed, frozen semantics.
+
+  - id: pyshop-sqlalchemy
+    repo: demo-repos/pyshop-legacy
+    package: sqlalchemy
+    expect: upgraded
+    note: >-
+      1.4 -> 2.x: select() positional columns, Session.get, engine.begin(), legacy Query
+      warnings promoted to errors.
+
+  - id: pyshop-requests
+    repo: demo-repos/pyshop-legacy
+    package: requests
+    expect: upgraded
+    note: >-
+      Minor bump that should need no code changes: measures that Upshift does not over-edit.
+
+  - id: flask-notes-flask
+    repo: demo-repos/flask-notes
+    package: flask
+    expect: upgraded
+    note: >-
+      2.0 -> 3.1 behind a pip resolver conflict (Werkzeug, Jinja2, click, itsdangerous pinned);
+      five removed APIs; conftest import error at startup.

@@ -362,6 +362,12 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("sandbox-check", help="run a trivial job in the Docker sandbox")
     check.add_argument("--image", default="python:3.12-slim")
 
+    evals = sub.add_parser("eval", help="run the upgrade cases in evals/cases.yaml")
+    evals.add_argument("--cases", default="evals/cases.yaml")
+    evals.add_argument("--out", default="evals/results")
+    evals.add_argument("--repeat", type=int, default=1, help="runs per case")
+    evals.add_argument("--only", nargs="*", default=[], help="case ids to run")
+
     export = sub.add_parser("export", help="export runs as static JSON for the replay site")
     export.add_argument("--out", default="web/public/runs")
     export.add_argument("--ids", nargs="*", default=[], help="run ids to export")
@@ -387,4 +393,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "export":
         return _export(args.out, args.ids, args.succeeded, args.failed)
+    if args.command == "eval":
+        from upshift.evals import load_cases, run_evals
+
+        results = asyncio.run(
+            run_evals(load_cases(Path(args.cases)), args.repeat, Path(args.out), only=args.only)
+        )
+        print(f"\n{sum(r.success for r in results)}/{len(results)} landed; see {args.out}/latest.md")
+        return 0 if results and all(r.expected for r in results) else 1
     return asyncio.run(_sandbox_check(args.image))
