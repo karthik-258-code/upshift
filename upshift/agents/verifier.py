@@ -42,6 +42,7 @@ print(json.dumps(out))
 """
 TRACE_PATH = re.compile(r"((?:[\w.-]+[/\\])*[\w.-]+\.py)(?::\d+|::)")
 STARTUP_FAILURE = "pytest::startup"
+CAPTURED_MARKER = "--- captured output ---"
 
 
 def startup_failure(log: str, exit_code: int) -> TestFailure:
@@ -97,7 +98,9 @@ class VerificationResult:
         """Source paths mentioned in failing test ids or tracebacks, as posix relative paths."""
         found: list[str] = []
         for failure in self.failures:
-            for text in (failure.test, failure.message):
+            # captured logs carry the framework's own file:line (e.g. flask.app:app.py:838)
+            traceback_part = failure.message.split(CAPTURED_MARKER, 1)[0]
+            for text in (failure.test, traceback_part):
                 for match in TRACE_PATH.finditer(text):
                     path = match.group(1).replace("\\", "/").lstrip("./")
                     if path.startswith(("usr/", "opt/", "tmp/")) or "site-packages" in path:
@@ -195,7 +198,7 @@ def parse_junit(xml_text: str) -> dict[str, Any]:
                 body = (child.text or "").strip()
                 text = f"{message}\n{body}".strip() if body and body != message else message
                 if captured:
-                    text = f"{text}\n--- captured output ---\n{captured[-2_000:]}"
+                    text = f"{text}\n{CAPTURED_MARKER}\n{captured[-2_000:]}"
                 failures.append(TestFailure(name, text[:6_000], child.tag))
     return {
         "tests": tests, "failed": failed, "errors": errors, "skipped": skipped,
