@@ -160,7 +160,7 @@ def build_test_command(workspace: Path, introspect: list[str] | None = None) -> 
         lines.append(f"python .upshift/introspect.py {modules} > {API_PATH} 2>/dev/null || true")
     lines.append(
         f"python -m pytest -q -p no:cacheprovider --maxfail=50 --junitxml={JUNIT_PATH} "
-        f"> {LOG_PATH} 2>&1"
+        f"-o junit_logging=all > {LOG_PATH} 2>&1"
     )
     lines.append("code=$?")
     lines.append(f"tail -n 200 {LOG_PATH}")
@@ -178,6 +178,11 @@ def parse_junit(xml_text: str) -> dict[str, Any]:
     for case in root.iter("testcase"):
         tests += 1
         name = f"{case.get('classname', '')}::{case.get('name', '')}".strip(":")
+        # with `-o junit_logging=all` pytest attaches captured stdout/stderr/logs per test;
+        # a web framework that logs the exception and answers 500 hides the traceback there
+        captured = "\n".join(
+            (case.findtext(tag) or "").strip() for tag in ("system-out", "system-err")
+        ).strip()
         for child in case:
             if child.tag == "skipped":
                 skipped += 1
@@ -189,7 +194,9 @@ def parse_junit(xml_text: str) -> dict[str, Any]:
                 message = (child.get("message") or "").strip()
                 body = (child.text or "").strip()
                 text = f"{message}\n{body}".strip() if body and body != message else message
-                failures.append(TestFailure(name, text[:4_000], child.tag))
+                if captured:
+                    text = f"{text}\n--- captured output ---\n{captured[-2_000:]}"
+                failures.append(TestFailure(name, text[:6_000], child.tag))
     return {
         "tests": tests, "failed": failed, "errors": errors, "skipped": skipped,
         "failures": failures,
