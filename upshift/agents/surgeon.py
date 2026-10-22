@@ -118,10 +118,27 @@ def modules_from_import_errors(verification: VerificationResult) -> list[str]:
 
 
 def is_collection_error(verification: VerificationResult) -> bool:
-    """True when nothing ran because a module failed to import."""
-    return bool(verification.failures) and verification.passed == 0 and all(
-        f.kind == "error" for f in verification.failures
+    """True when nothing ran because a module failed to import (or pytest died at startup).
+
+    pytest reports one `collection failure` error per module that failed to import; a
+    runtime error inside a test (fixture setup, an exception in the body) is not that.
+    """
+    if not verification.failures or verification.passed != 0:
+        return False
+    return all(
+        f.kind == "error" and (
+            f.test == "pytest::startup"
+            or f.message.startswith("collection failure")
+            or "in <module>" in f.message
+        )
+        for f in verification.failures
     )
+
+
+def tests_executed(verification: VerificationResult) -> int:
+    """Tests that actually ran. In a collection-error state the JUnit "tests" are per-module
+    error entries, not executions, so they count as zero."""
+    return 0 if is_collection_error(verification) else verification.tests
 
 
 def warnings_are_errors(workspace: Path) -> str | None:
@@ -1025,8 +1042,8 @@ class Surgeon:
         """
         if new.passed != best.passed:
             return new.passed < best.passed
-        if new.tests != best.tests:
-            return new.tests < best.tests
+        if tests_executed(new) != tests_executed(best):
+            return tests_executed(new) < tests_executed(best)
         return new.failure_count > best.failure_count
 
     # ---- main loop ----------------------------------------------------------

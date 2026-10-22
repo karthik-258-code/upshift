@@ -162,8 +162,8 @@ def build_test_command(workspace: Path, introspect: list[str] | None = None) -> 
         lines.append("UPSHIFT_PY")
         lines.append(f"python .upshift/introspect.py {modules} > {API_PATH} 2>/dev/null || true")
     lines.append(
-        f"python -m pytest -q -p no:cacheprovider --maxfail=50 --junitxml={JUNIT_PATH} "
-        f"-o junit_logging=all > {LOG_PATH} 2>&1"
+        f"python -m pytest -q --showlocals -p no:cacheprovider --maxfail=50 "
+        f"--junitxml={JUNIT_PATH} -o junit_logging=all > {LOG_PATH} 2>&1"
     )
     lines.append("code=$?")
     lines.append(f"tail -n 200 {LOG_PATH}")

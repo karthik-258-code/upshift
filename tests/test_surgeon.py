@@ -572,6 +572,30 @@ def test_progress_ordering_prefers_tests_that_run() -> None:
     assert modules_from_import_errors(startup) == ["werkzeug.urls"]
     assert modules_from_import_errors(all_fail) == []
 
+    # two modules failing to import -> one module failing to import is progress, even though
+    # the JUnit "tests" count (one error entry per module) went from 2 to 1
+    def collection(modules: list[str]) -> VerificationResult:
+        return VerificationResult(
+            ok=False, phase="test", exit_code=2, duration_ms=1, tests=len(modules), passed=0,
+            errors=len(modules),
+            failures=[TestFailure(
+                f"tests.{m}", f"collection failure\npyshop/{m}.py:3: in <module>\nE ImportError",
+                "error",
+            ) for m in modules],
+        )
+
+    two = collection(["test_models", "test_settings"])
+    one = collection(["test_models"])
+    assert not Surgeon._is_worse(one, two)
+    assert Surgeon._is_worse(two, one)
+    # fixture errors at runtime are executions, not collection errors
+    runtime_errors = VerificationResult(
+        ok=False, phase="test", exit_code=1, duration_ms=1, tests=9, passed=0, errors=9,
+        failures=[TestFailure(f"t::{i}", "test setup failed\nE TypeError: boom", "error")
+                  for i in range(9)],
+    )
+    assert not Surgeon._is_worse(runtime_errors, one)
+
 
 async def test_research_planner_writes_the_queries(
     tmp_path: Path, catalog: ModelCatalog
