@@ -97,9 +97,20 @@ class TokenFactoryClient:
             api_key=api_key, base_url=base_url, timeout=timeout, max_retries=0
         )
         self._sleep: SleepFn = sleep or asyncio.sleep
+        self.timeout = timeout
         self.max_retries = max_retries
         self.usage_hook = usage_hook
         self.ledger: list[LLMUsage] = []
+
+    def timeout_for(self, max_tokens: int | None, thinking: bool) -> float:
+        """Per-request timeout. The base suits classification and short edits; a deep
+        reasoning call that may emit 20k tokens on a 550B model needs minutes, and timing it
+        out only to retry the identical request wastes time and money. Budget: 25 tokens/s
+        plus queueing headroom, capped at 15 minutes."""
+        if not max_tokens:
+            return self.timeout
+        generous = 30.0 + max_tokens / 25.0 + (120.0 if thinking else 0.0)
+        return min(max(self.timeout, generous), 900.0)
 
     @property
     def total_cost_usd(self) -> float:
@@ -132,6 +143,7 @@ class TokenFactoryClient:
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         kwargs.update(extra)
+        kwargs.setdefault("timeout", self.timeout_for(max_tokens, thinking))
         if not thinking and spec.thinking_control:
             messages = apply_thinking_control(spec.thinking_control, messages, kwargs)
         kwargs["messages"] = messages
