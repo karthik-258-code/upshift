@@ -31,7 +31,7 @@ from upshift.ecosystems.python import add_requirement, bump_pin, normalize, pars
 from upshift.ecosystems.usage import import_names_for
 from upshift.llm.client import TokenFactoryClient, content_of
 from upshift.llm.router import BudgetExhausted, ModelRouter, NoCapableModel, TaskClass
-from upshift.llm.structured import parse_json
+from upshift.llm.structured import complete_json, parse_json
 from upshift.tools.pypi import PyPIClient
 from upshift.tools.tavily_search import TavilySearchTool
 
@@ -199,6 +199,27 @@ SYSTEM_PROMPT = (
     "Do not edit version pins in requirements or pyproject files; to add a package, list it "
     "under NEW_DEPENDENCIES and it will be pinned for you.\n\n"
     + FORMAT_SPEC
+)
+
+RESEARCH_PLAN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "hypothesis": {"type": "string"},
+        "queries": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["hypothesis", "queries"],
+    "additionalProperties": False,
+}
+
+RESEARCH_PLANNER_PROMPT = (
+    "You plan web research for an agent that is stuck fixing a test suite after a dependency "
+    "upgrade. From the failing tests (ids, assertion or exception text, captured output), the "
+    "relevant code, and what the last attempt changed, state in one sentence the most likely "
+    "root cause in terms of the LIBRARY's behaviour change (a removed or renamed API, a "
+    "config key that no longer exists, a changed default), then write up to three web search "
+    "queries that would find the documentation or changelog entry explaining it. Name the "
+    "library, the major version and the specific API or config key. Never paste assertion "
+    "values or file paths into a query."
 )
 
 BLOCK_HEADER = re.compile(r"^###\s+(EDIT|WRITE)\s+(\S+)\s*$")
@@ -472,8 +493,52 @@ class Surgeon:
         self.pypi = pypi
         self.max_attempts = max_attempts
         self.search = search
+        self.research_planner = True  # let a cheap model write the search queries
 
     # ---- targeted research when stuck -----------------------------------------
+
+    async def plan_queries(
+        self,
+        workspace: Path,
+        dep: DependencyAssessment,
+        verification: VerificationResult,
+        previous: Attempt | None,
+        run_id: str | None,
+        budget: Budget | None,
+    ) -> tuple[list[str], str]:
+        """Ask the classification-tier model what to search for. An assertion like
+        `['id', 'price', 'title'] == ['id', 'title', 'price']` says nothing about the library;
+        a model reading the test and the code can name the config key behind it."""
+        lines = [
+            f"Package upgraded: {dep.name} {dep.current} -> {dep.latest}", "", "Failing tests:",
+        ]
+        for failure in verification.failures[:3]:
+            lines.append(f"--- {failure.test}\n{failure.message[:1_500]}")
+        if previous is not None:
+            lines.append(f"\nLast attempt's reasoning: {previous.analysis[:800]}")
+            for edit in previous.edits:
+                if edit.status == "applied":
+                    lines.append(f"- edited {edit.path}: {edit.justification}")
+        for rel in verification.referenced_files()[:2]:
+            text = _read(workspace, rel)
+            if text:
+                lines.append(f"\n=== {rel} (current) ===\n{text[:3_000]}")
+        try:
+            decision = self.router.route(
+                TaskClass.CLASSIFY, required_caps={"json_schema"}, budget=budget
+            )
+            data = await complete_json(
+                self.llm, decision.model,
+                [{"role": "system", "content": RESEARCH_PLANNER_PROMPT},
+                 {"role": "user", "content": "\n".join(lines)}],
+                schema_name="research_plan", schema=RESEARCH_PLAN_SCHEMA, max_tokens=600,
+                agent=self.agent, run_id=run_id, budget=budget,
+            )
+        except Exception as exc:  # noqa: BLE001 - fall back to templated queries
+            log.warning("surgeon: research planner failed: %s", exc)
+            return [], ""
+        queries = [str(q).strip() for q in data.get("queries") or [] if str(q).strip()][:3]
+        return queries, str(data.get("hypothesis", "")).strip()[:500]
 
     async def targeted_research(
         self,
@@ -481,6 +546,8 @@ class Surgeon:
         verification: VerificationResult,
         previous: Attempt | None,
         run_id: str | None,
+        workspace: Path | None = None,
+        budget: Budget | None = None,
     ) -> list[str]:
         """Search the web for the specific errors blocking progress (after a stalled attempt)."""
         if self.search is None:
@@ -500,6 +567,14 @@ class Surgeon:
             if query not in queries:
                 queries.append(query)
         notes: list[str] = []
+        if self.research_planner and workspace is not None:
+            planned, hypothesis = await self.plan_queries(
+                workspace, dep, verification, previous, run_id, budget
+            )
+            if planned:
+                queries = planned
+            if hypothesis:
+                notes.append(f"- Research planner hypothesis: {hypothesis}")
         for query in queries[:3]:
             result = await self.search.search(query, max_results=3)
             await self._emit(
@@ -1045,7 +1120,9 @@ class Surgeon:
             circling = collection_streak >= 2
             research: list[str] = []
             if previous is not None and (previous.rolled_back or circling):
-                research = await self.targeted_research(dep, verification, previous, run_id)
+                research = await self.targeted_research(
+                    dep, verification, previous, run_id, workspace=workspace, budget=budget
+                )
             dead_ends = [line for line, n in error_history.most_common(8) if n >= 2 and line]
             prompt = self.build_prompt(
                 workspace, dep, dossier, verification, allowed, previous, research, dead_ends
