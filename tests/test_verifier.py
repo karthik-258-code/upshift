@@ -25,7 +25,10 @@ JUNIT = """<?xml version="1.0" encoding="utf-8"?>
 <testcase classname="tests.test_models" name="test_money_is_immutable">
 <failure message="Failed: DID NOT RAISE TypeError">tests/test_models.py:27: in test_immutable
     with pytest.raises(TypeError):
-E   Failed: DID NOT RAISE</failure></testcase>
+E   Failed: DID NOT RAISE</failure>
+<system-out>--------------------------------- Captured log call ---------------------------------
+ERROR    app:app.py:838 Exception on /notes [POST]
+TypeError: Object of type Decimal is not JSON serializable</system-out></testcase>
 <testcase classname="tests.test_settings" name="test_settings_defaults">
 <error message="collection failure">pyshop/settings.py:6: in &lt;module&gt;
     from pydantic import BaseSettings
@@ -59,6 +62,11 @@ def test_parse_junit_counts_and_failures() -> None:
         "tests.test_settings::test_settings_defaults": "error",
     }
     assert parse_junit("not xml")["tests"] == 0
+    immutable = next(f for f in stats["failures"] if f.test.endswith("test_money_is_immutable"))
+    assert "--- captured output ---" in immutable.message
+    assert "Object of type Decimal is not JSON serializable" in immutable.message
+    settings = next(f for f in stats["failures"] if f.test.endswith("test_settings_defaults"))
+    assert "captured output" not in settings.message
 
 
 def test_build_test_command(tmp_path: Path) -> None:

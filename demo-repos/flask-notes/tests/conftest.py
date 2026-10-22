@@ -5,7 +5,9 @@ from notes import create_app
 
 @pytest.fixture
 def app():
-    return create_app()
+    app = create_app()
+    app.config["TESTING"] = True  # propagate exceptions to the test client
+    return app
 
 
 @pytest.fixture
