@@ -573,6 +573,54 @@ def test_progress_ordering_prefers_tests_that_run() -> None:
     assert modules_from_import_errors(all_fail) == []
 
 
+async def test_research_planner_writes_the_queries(
+    tmp_path: Path, catalog: ModelCatalog
+) -> None:
+    import json as _json
+
+    from upshift.tools.tavily_search import TavilySearchTool
+
+    class FakeTavily:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def search(self, **params: Any) -> dict[str, Any]:
+            self.queries.append(params["query"])
+            return {"results": [{
+                "title": "Changes 2.3", "url": "https://flask.test/changes",
+                "content": "JSON_SORT_KEYS removed; use app.json.sort_keys", "score": 0.9,
+            }]}
+
+    ws = workspace(tmp_path)
+    f1 = ("tests/test_api.py::test_keys", "tests/test_api.py:12: E assert ['id'] == ['x']")
+    verifier = FakeVerifier([red(f1), red(f1), green()])
+    plan = _json.dumps({
+        "hypothesis": "Flask 2.3 removed the JSON_SORT_KEYS config key",
+        "queries": ["flask 3 JSON_SORT_KEYS removed app.json sort_keys", "flask 2.3 changelog"],
+    })
+    outputs = [
+        response("a", write_block("pyshop/settings.py", "BAD = 1\n")),  # attempt 1: no effect
+        plan,  # research planner (Lightning), after the rollback
+        response("b", write_block("pyshop/settings.py", "GOOD = 1\n")),  # attempt 2
+    ]
+    surgeon, completions = make_surgeon(catalog, outputs, verifier)
+    fake = FakeTavily()
+    surgeon.search = TavilySearchTool(client=fake)
+    result = await surgeon.upgrade(ws, dep(), dossier())
+
+    assert result.success
+    assert fake.queries == [
+        "flask 3 JSON_SORT_KEYS removed app.json sort_keys", "flask 2.3 changelog",
+    ]
+    planner_request = completions.requests[1]
+    assert planner_request["model"] == catalog.models["lightning"].id
+    assert planner_request["response_format"]["type"] == "json_schema"
+    assert "Failing tests:" in planner_request["messages"][1]["content"]
+    second_prompt = completions.requests[2]["messages"][1]["content"]
+    assert "Research planner hypothesis: Flask 2.3 removed the JSON_SORT_KEYS" in second_prompt
+    assert "JSON_SORT_KEYS removed; use app.json.sort_keys" in second_prompt
+
+
 def test_error_line_cleaning() -> None:
     from upshift.agents.surgeon import error_line
 
@@ -613,6 +661,7 @@ async def test_targeted_research_after_rollback(tmp_path: Path, catalog: ModelCa
         response("b", write_block("pyshop/settings.py", "GOOD = 1\n")),
     ]
     surgeon, completions = make_surgeon(catalog, outputs, verifier)
+    surgeon.research_planner = False  # templated queries; the planner has its own test
     fake = FakeTavily()
     surgeon.search = TavilySearchTool(client=fake)
     result = await surgeon.upgrade(ws, dep(), dossier())
