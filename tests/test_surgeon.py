@@ -544,6 +544,35 @@ async def test_install_conflict_co_upgrades_pinned_transitives(
     ]
 
 
+def test_progress_ordering_prefers_tests_that_run() -> None:
+    from upshift.agents.surgeon import modules_from_import_errors
+
+    startup = VerificationResult(
+        ok=False, phase="test", exit_code=4, duration_ms=1, tests=1, passed=0, errors=1,
+        failures=[TestFailure(
+            "pytest::startup",
+            "E   ImportError: cannot import name 'url_quote' from 'werkzeug.urls' (/x/urls.py)",
+            "error",
+        )],
+    )
+    all_fail = VerificationResult(
+        ok=False, phase="test", exit_code=1, duration_ms=1, tests=9, passed=0, failed=9,
+        failures=[TestFailure(f"t::{i}", "E assert 500 == 201") for i in range(9)],
+    )
+    some_pass = VerificationResult(
+        ok=False, phase="test", exit_code=1, duration_ms=1, tests=9, passed=4, failed=5,
+    )
+    fewer_tests = VerificationResult(
+        ok=False, phase="test", exit_code=1, duration_ms=1, tests=6, passed=4, failed=2,
+    )
+    assert not Surgeon._is_worse(all_fail, startup)  # nine tests running beats none
+    assert Surgeon._is_worse(startup, all_fail)
+    assert not Surgeon._is_worse(some_pass, all_fail)
+    assert Surgeon._is_worse(fewer_tests, some_pass)  # tests disappeared: regression
+    assert modules_from_import_errors(startup) == ["werkzeug.urls"]
+    assert modules_from_import_errors(all_fail) == []
+
+
 def test_error_line_cleaning() -> None:
     from upshift.agents.surgeon import error_line
 

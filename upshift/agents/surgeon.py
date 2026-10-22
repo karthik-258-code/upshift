@@ -102,6 +102,21 @@ def conflicting_pins(log: str, manifest_text: str, manifest: str, upgraded: str)
     return found
 
 
+IMPORT_ERROR_PATTERN = re.compile(r"cannot import name '\w+' from '([\w.]+)'")
+
+
+def modules_from_import_errors(verification: VerificationResult) -> list[str]:
+    """Modules named in `cannot import name X from M` errors, so their installed public
+    API can be introspected and shown to the model (M is often not the upgraded package:
+    Flask drags Werkzeug along)."""
+    modules: list[str] = []
+    for failure in verification.failures:
+        for match in IMPORT_ERROR_PATTERN.finditer(failure.message):
+            if match.group(1) not in modules:
+                modules.append(match.group(1))
+    return modules
+
+
 def is_collection_error(verification: VerificationResult) -> bool:
     """True when nothing ran because a module failed to import."""
     return bool(verification.failures) and verification.passed == 0 and all(
@@ -926,13 +941,17 @@ class Surgeon:
 
     @staticmethod
     def _is_worse(new: VerificationResult, best: VerificationResult) -> bool:
-        """Fewer passing tests is worse; with equal passes, more failures is worse.
+        """Order of progress: more tests passing, then more tests executed, then fewer
+        failures.
 
-        A run that collects 17 tests and fails 4 beats one where a collection error hides
-        everything behind a single error, even though 4 > 1.
+        Going from a startup error (nothing collected) to nine tests that all fail at runtime
+        is a step forward, not a regression; the imports work and the failures are now
+        specific. The same ordering makes deleting tests a regression.
         """
         if new.passed != best.passed:
             return new.passed < best.passed
+        if new.tests != best.tests:
+            return new.tests < best.tests
         return new.failure_count > best.failure_count
 
     # ---- main loop ----------------------------------------------------------
@@ -1155,12 +1174,14 @@ class Surgeon:
                 continue
             noop_streak = 0
 
+            extra_modules = modules_from_import_errors(verification)
+            introspect = sorted(set(introspect) | set(extra_modules))
             verification = await self.verifier.verify(
                 workspace, run_id, node, label=f"{dep.name}: attempt {number}",
                 introspect=introspect,
             )
             if verification.api_surface:
-                result.api_surface = verification.api_surface
+                result.api_surface = {**result.api_surface, **verification.api_surface}
             attempt.verification = verification.to_dict()
             for failure in verification.failures:
                 error_history[error_line(failure.message)] += 1
