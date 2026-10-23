@@ -303,6 +303,11 @@ def _export(out: str, ids: list[str], succeeded: int, failed: int) -> int:
         json.dumps({"runs": index, "static": True}), encoding="utf-8"
     )
     print(f"index.json: {len(index)} run(s) -> {out_dir}")
+    results_dir = Path("evals") / "results"
+    latest = sorted(results_dir.glob("*.json")) if results_dir.is_dir() else []
+    if latest:
+        (out_dir / "evals.json").write_text(latest[-1].read_text(encoding="utf-8"), "utf-8")
+        print(f"evals.json: {latest[-1].name}")
     return 0
 
 

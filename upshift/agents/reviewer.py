@@ -120,7 +120,11 @@ AUDIT_PROMPT = (
     "behaves, or the test suite exercises exactly that path and passes); unverifiable "
     "(plausible, but nothing here proves it); or revised (the claim as worded is wrong, but "
     "the same lines show a different, real problem: restate it precisely with the right "
-    "severity). Quote the lines you rely on. Be literal."
+    "severity). The API list contains MODULE-LEVEL names only: a method or attribute of a "
+    "class (for example app.errorhandler on Flask) is never in it, so its absence from the "
+    "list proves nothing; a claim that such a member does not exist is unverifiable at best, "
+    "and contradicted if the test suite exercises it and passes. Quote the lines you rely "
+    "on. Be literal."
 )
 
 

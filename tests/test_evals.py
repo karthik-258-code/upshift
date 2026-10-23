@@ -15,22 +15,30 @@ def test_case_result_and_markdown_table() -> None:
         "final": {"tests": 9, "passed": 9, "failure_count": 0},
         "manifest_changes": ["werkzeug co-upgraded to 3.1.9 in requirements.txt"],
     }]}
-    events = [Event(
-        run_id=run.id, type=EventType.TEST_RESULT, agent="verifier",
-        payload={"label": "flask: after co-upgrading werkzeug", "tests": 1, "passed": 0,
-                 "failure_count": 1},
-    )]
+    events = [
+        Event(  # pip refused the install: not a test run, skipped as the bare-bump state
+            run_id=run.id, type=EventType.TEST_RESULT, agent="verifier",
+            payload={"label": "flask: after version bump", "phase": "install", "tests": 0,
+                     "passed": 0, "failure_count": 0},
+        ),
+        Event(
+            run_id=run.id, type=EventType.TEST_RESULT, agent="verifier",
+            payload={"label": "flask: after co-upgrading werkzeug", "phase": "test",
+                     "tests": 1, "passed": 0, "errors": 1, "failure_count": 1},
+        ),
+    ]
     result = case_result(EvalCase("flask-notes-flask", "demo-repos/flask-notes", "flask"),
                          1, run, events, 95.0)
     assert result.success and result.expected
     assert (result.bare_passed, result.bare_total) == (0, 1)
+    assert result.bare_phase == "collection"
     assert (result.final_passed, result.final_total) == (9, 9)
     assert result.manifest_changes == ["werkzeug co-upgraded to 3.1.9 in requirements.txt"]
 
     table = markdown_table([result], "2026-10-22 18:00 UTC")
     assert (
-        "| flask-notes-flask | flask 2.0.3 -> 3.1.3 | 0/1 | **9/9** | 3 | approve | $0.100 "
-        "| 1m35s | pass |"
+        "| flask-notes-flask | flask 2.0.3 -> 3.1.3 | 0 (import error) | **9/9** | 3 | approve "
+        "| $0.100 | 1m35s | pass |"
     ) in table
     assert "**1/1 upgrades landed** (100%)" in table
 

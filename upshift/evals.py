@@ -44,6 +44,7 @@ class CaseResult:
     expected: bool
     bare_passed: int
     bare_total: int
+    bare_phase: str  # test | install | timeout | collection
     final_passed: int
     final_total: int
     attempts: int
@@ -67,12 +68,39 @@ def load_cases(path: Path) -> list[EvalCase]:
 
 
 def first_test_result(events: list[Any]) -> dict[str, Any]:
-    """The verifier's first `test.result` on a run: the state right after the bare bump
-    (or after co-upgrading pins when pip refused the install)."""
+    """The verifier's first `test.result` in which tests could run: the state right after
+    the bare bump, or after co-upgrading pins when pip had refused the install. Falls back
+    to the very first result (an install failure) when nothing ever ran."""
+    first: dict[str, Any] = {}
     for event in events:
-        if event.type is EventType.TEST_RESULT:
-            return dict(event.payload)
-    return {}
+        if event.type is not EventType.TEST_RESULT:
+            continue
+        payload = dict(event.payload)
+        first = first or payload
+        if payload.get("phase") == "test":
+            return payload
+    return first
+
+
+def bare_phase_of(bare: dict[str, Any]) -> str:
+    phase = str(bare.get("phase", "test"))
+    if phase != "test":
+        return phase
+    tests, passed = int(bare.get("tests", 0)), int(bare.get("passed", 0))
+    errors = int(bare.get("errors", 0))
+    if passed == 0 and tests and errors == tests:
+        return "collection"
+    return "test"
+
+
+def bare_cell(result: CaseResult) -> str:
+    if result.bare_phase == "collection":
+        return "0 (import error)"
+    if result.bare_phase == "install":
+        return "0 (install failed)"
+    if result.bare_phase == "timeout":
+        return "0 (timed out)"
+    return f"{result.bare_passed}/{result.bare_total}"
 
 
 def case_result(
@@ -91,6 +119,7 @@ def case_result(
         case=case.id, package=case.package, current=dep.get("current"), target=dep.get("target"),
         repeat=repeat, success=success, expected=(success == (case.expect == "upgraded")),
         bare_passed=int(bare.get("passed", 0)), bare_total=int(bare.get("tests", 0)),
+        bare_phase=bare_phase_of(bare) if bare else "install",
         final_passed=final_passed, final_total=final_total,
         attempts=int(dep.get("attempts", 0)), review=dep.get("review_verdict"),
         cost_usd=float(dep.get("cost_usd", run.spent_usd) or 0.0),
@@ -116,7 +145,7 @@ def markdown_table(results: list[CaseResult], generated_at: str) -> str:
             outcome += f" ({r.error[:60]})"
         lines.append(
             f"| {r.case}{f' #{r.repeat}' if r.repeat > 1 else ''} | {r.package} "
-            f"{r.current or '?'} -> {r.target or '?'} | {r.bare_passed}/{r.bare_total} | "
+            f"{r.current or '?'} -> {r.target or '?'} | {bare_cell(r)} | "
             f"**{r.final_passed}/{r.final_total}** | {r.attempts} | {r.review or '-'} | "
             f"${r.cost_usd:.3f} | {int(r.duration_s // 60)}m{int(r.duration_s % 60):02d}s | "
             f"{outcome} |"
