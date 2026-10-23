@@ -1,5 +1,14 @@
 stages: [lint, test, build, deploy]
 
+# Dogfood: the reusable template, pointed at the demo repo in this project. Manual, and it
+# needs NEBIUS_API_KEY, TAVILY_API_KEY and GITLAB_TOKEN as CI/CD variables to do anything;
+# including it here at least proves the template parses on every pipeline.
+include:
+  - local: templates/upshift.yml
+    inputs:
+      package: pydantic
+      target_project: gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy
+
 default:
   image: python:3.12-slim
   cache:

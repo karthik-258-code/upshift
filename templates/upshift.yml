@@ -1,0 +1,68 @@
+# Upshift as a GitLab CI job.
+#
+# Include this template in any Python project and Upshift will upgrade a dependency, verify
+# the project's own tests in a Docker sandbox, and open a merge request in the project with
+# every edit linked to the changelog line that justifies it.
+#
+#   include:
+#     - project: gitlab-ai-hackathon/transcend-october-2026/43491832/nvidxnebi
+#       file: templates/upshift.yml
+#       inputs:
+#         package: pydantic
+#
+# Required CI/CD variables (masked): NEBIUS_API_KEY, TAVILY_API_KEY, and a GITLAB_TOKEN with
+# `api` scope so the job can push the branch and open the merge request.
+
+spec:
+  inputs:
+    package:
+      description: Dependency to upgrade. Leave empty to let the policy pick the riskiest outdated ones.
+      default: ""
+    policy:
+      description: conservative (minor, patch) | balanced (top 3 by risk) | aggressive (up to 8)
+      default: balanced
+    budget_usd:
+      description: Token Factory spend cap for the run.
+      default: "2.00"
+    target_project:
+      description: GitLab project path to open the merge request in.
+      default: $CI_PROJECT_PATH
+    upshift_ref:
+      description: Git ref of Upshift to install.
+      default: main
+    stage:
+      default: deploy
+---
+upshift-upgrade:
+  stage: $[[ inputs.stage ]]
+  image: python:3.12
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    EXECUTOR: docker
+    DEFAULT_BUDGET_USD: $[[ inputs.budget_usd ]]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - when: manual
+      allow_failure: true
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq docker.io >/dev/null
+    - pip install -q "git+https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/nvidxnebi.git@$[[ inputs.upshift_ref ]]"
+    - docker version --format '{{.Server.Version}}'
+  script:
+    - |
+      PKG_ARGS=""
+      if [ -n "$[[ inputs.package ]]" ]; then PKG_ARGS="--package $[[ inputs.package ]]"; fi
+      python -m upshift run "$CI_PROJECT_DIR" $PKG_ARGS \
+        --policy "$[[ inputs.policy ]]" \
+        --target-project "$[[ inputs.target_project ]]" \
+        --budget "$[[ inputs.budget_usd ]]"
+  artifacts:
+    when: always
+    paths:
+      - .data/
+    expire_in: 1 week
