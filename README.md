@@ -19,17 +19,25 @@ Factory**, with **Tavily** for changelog research. Apache 2.0.
 "Bare bump" is what a dependabot-style tool leaves you with: tests passing after only the
 version pin changed. Full tables in [`evals/results/`](evals/results/).
 
-| Upgrade | Bare bump | Upshift | Attempts | Review | Cost |
-| --- | --- | --- | --- | --- | --- |
-| pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 5, 3 | approve | $0.09, $0.06 |
-| SQLAlchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 1, 1 | approve | $0.04, $0.04 |
-| requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 (no edits needed) | skipped | $0.001 |
-| Flask 2.0.3 -> 3.1.3 (4 pins co-upgraded) | 0 (install failed, then import error) | **9/9** | 3, 12 (one miss at 8/9) | approve | $0.05, $0.34 |
+| Case | Upgrade | Bare bump | Upshift | Attempts | Review | Cost | Time | Outcome |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| pyshop-pydantic | pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 5 | approve | $0.081 | 2m36s | pass |
+| pyshop-pydantic #2 | pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 9 | approve | $0.225 | 5m19s | pass |
+| pyshop-sqlalchemy | sqlalchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 1 | approve | $0.031 | 0m59s | pass |
+| pyshop-sqlalchemy #2 | sqlalchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 1 | approve | $0.033 | 1m12s | pass |
+| pyshop-requests | requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 | skipped | $0.001 | 0m18s | pass |
+| pyshop-requests #2 | requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 | skipped | $0.001 | 0m19s | pass |
+| flask-notes-flask | flask 2.0.3 -> 3.1.3 | 0 (import error) | **9/9** | 3 | approve | $0.050 | 2m03s | pass |
+| flask-notes-flask #2 | flask 2.0.3 -> 3.1.3 | 0 (import error) | **8/9** | 12 | - | $0.335 | 6m59s | FAIL (tests still failing after 12 attempt(s)) |
 
-7 of 8 upgrades landed; a follow-up check of the Flask case after the "stuck escalation"
-fix landed 3 of 3 (9, 9 and 12 attempts, $0.14 to $0.28). Every number comes from recorded
-`llm.call` and `test.result` events, not estimates. Failures are kept in the logs on
-purpose; they are how the convergence machinery was earned.
+**7/8 upgrades landed (87%).** Mean cost $0.095; total $0.76 in 20 minutes (eval of
+2026-10-23 01:41 UTC, [full table](evals/results/latest.md)). The Flask miss led to the
+"stuck escalation" mechanism; a follow-up check of that case alone then landed
+[3 of 3](evals/results/flask-stuck-check/latest.md) (12, 9 and 9 attempts; $0.276, $0.162,
+$0.144). The Flask bare-bump column reads "import error" because pip's install first failed
+on four pinned packages, which Upshift co-upgraded before any test could run. Every number
+comes from recorded `llm.call` and `test.result` events, not estimates. Failures are kept in
+the logs on purpose; they are how the convergence machinery was earned.
 
 ## How it works
 
