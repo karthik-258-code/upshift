@@ -33,11 +33,23 @@ export default function Launch({ readonly }: { readonly: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hideFailed, setHideFailed] = useState(false);
+  const [evals, setEvals] = useState<{ generated_at: string; results: any[] } | null>(null);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => setHealth(null));
     api.runs().then((r) => setRuns(r.runs)).catch(() => setRuns([]));
+    fetch("runs/evals.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setEvals(data && Array.isArray(data.results) ? data : null))
+      .catch(() => setEvals(null));
   }, []);
+
+  const bareCell = (r: any) => {
+    if (r.bare_phase === "collection") return "0 (import error)";
+    if (r.bare_phase === "install") return "0 (install failed)";
+    if (r.bare_phase === "timeout") return "0 (timed out)";
+    return `${r.bare_passed}/${r.bare_total}`;
+  };
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -125,6 +137,42 @@ export default function Launch({ readonly }: { readonly: boolean }) {
               {busy ? "Starting…" : "Start upgrade run"}
             </button>
           </form>
+        )}
+
+        {evals && evals.results.length > 0 && (
+          <div className="mt-10">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-sm uppercase tracking-wide text-zinc-500">Eval: bare bump vs Upshift</h2>
+              <span className="text-[11px] text-zinc-600">{evals.generated_at} · real runs, no MRs published</span>
+            </div>
+            <table className="mt-3 w-full text-xs border border-zinc-800 rounded-md overflow-hidden">
+              <thead className="bg-zinc-900/70 text-zinc-500 uppercase tracking-wide text-[10px]">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium">Upgrade</th>
+                  <th className="text-right px-3 py-2 font-medium" title="tests passing after only the version pin changed">Bare bump</th>
+                  <th className="text-right px-3 py-2 font-medium">Upshift</th>
+                  <th className="text-right px-3 py-2 font-medium">Attempts</th>
+                  <th className="text-left px-3 py-2 font-medium">Review</th>
+                  <th className="text-right px-3 py-2 font-medium">Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {evals.results.map((r: any, i: number) => (
+                  <tr key={i} className={r.success ? "" : "text-rose-300"}>
+                    <td className="px-3 py-2 mono">{r.package} {r.current ?? "?"} → {r.target ?? "?"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400 mono">{bareCell(r)}</td>
+                    <td className="px-3 py-2 text-right mono text-emerald-300">{r.final_passed}/{r.final_total}</td>
+                    <td className="px-3 py-2 text-right mono">{r.attempts}</td>
+                    <td className="px-3 py-2 text-zinc-400">{r.review ?? "-"}</td>
+                    <td className="px-3 py-2 text-right mono">{formatUsd(r.cost_usd, 3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-2 text-[11px] text-zinc-600">
+              {evals.results.filter((r: any) => r.success).length}/{evals.results.length} upgrades landed · total {formatUsd(evals.results.reduce((s: number, r: any) => s + (r.cost_usd ?? 0), 0), 2)}
+            </p>
+          </div>
         )}
 
         <div className="mt-10 grid grid-cols-3 gap-3 text-xs">
