@@ -93,15 +93,15 @@ def case_result(
         bare_passed=int(bare.get("passed", 0)), bare_total=int(bare.get("tests", 0)),
         final_passed=final_passed, final_total=final_total,
         attempts=int(dep.get("attempts", 0)), review=dep.get("review_verdict"),
-        cost_usd=float(dep.get("cost_usd", run.spent_usd) or 0.0), duration_s=round(duration_s, 1),
-        run_id=run.id, error=dep.get("error"),
+        cost_usd=float(dep.get("cost_usd", run.spent_usd) or 0.0),
+        duration_s=round(duration_s, 1), run_id=run.id, error=dep.get("error"),
         manifest_changes=list(dep.get("manifest_changes") or []),
     )
 
 
 def markdown_table(results: list[CaseResult], generated_at: str) -> str:
     lines = [
-        f"# Upshift eval results",
+        "# Upshift eval results",
         "",
         f"Generated {generated_at}. Bare bump = tests passing after only the version pin "
         "changed (what a dependabot-style tool leaves you with). Upshift = after the agent's "
@@ -208,6 +208,10 @@ async def run_evals(
                 "generated_at": generated_at, "repeat": repeat,
                 "results": [asdict(r) for r in results],
             }
-            (out_dir / f"{stamp}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            (out_dir / "latest.md").write_text(markdown_table(results, generated_at), encoding="utf-8")
+            (out_dir / f"{stamp}.json").write_text(
+                json.dumps(payload, indent=2), encoding="utf-8"
+            )
+            (out_dir / "latest.md").write_text(
+                markdown_table(results, generated_at), encoding="utf-8"
+            )
     return results

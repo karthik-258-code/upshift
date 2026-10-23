@@ -78,6 +78,8 @@ class DependencyOutcome:
     diff: str = ""
     failures: list[dict[str, str]] = field(default_factory=list)
     attempt_log: list[str] = field(default_factory=list)
+    final: dict[str, Any] = field(default_factory=dict)  # tests/passed/failure_count at the end
+    manifest_changes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -230,6 +232,11 @@ class Supervisor:
             review_verdict=review.verdict if review else None,
             review_findings=len(review.findings) if review else 0,
             error=surgery.error, diff=surgery.diff,
+            final={
+                key: final.get(key, 0)
+                for key in ("tests", "passed", "failed", "errors", "failure_count", "phase")
+            },
+            manifest_changes=list(surgery.manifest_changes),
             failures=[
                 {"test": f["test"], "error": _error_line(f["message"])[:200]}
                 for f in final.get("failures", [])[:10]

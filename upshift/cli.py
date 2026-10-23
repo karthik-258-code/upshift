@@ -399,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         results = asyncio.run(
             run_evals(load_cases(Path(args.cases)), args.repeat, Path(args.out), only=args.only)
         )
-        print(f"\n{sum(r.success for r in results)}/{len(results)} landed; see {args.out}/latest.md")
+        landed = sum(r.success for r in results)
+        print(f"\n{landed}/{len(results)} landed; see {args.out}/latest.md")
         return 0 if results and all(r.expected for r in results) else 1
     return asyncio.run(_sandbox_check(args.image))
