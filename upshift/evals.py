@@ -54,6 +54,7 @@ class CaseResult:
     run_id: str
     error: str | None = None
     manifest_changes: list[str] = field(default_factory=list)
+    still_failing: list[str] = field(default_factory=list)
 
 
 def load_cases(path: Path) -> list[EvalCase]:
@@ -125,6 +126,9 @@ def case_result(
         cost_usd=float(dep.get("cost_usd", run.spent_usd) or 0.0),
         duration_s=round(duration_s, 1), run_id=run.id, error=dep.get("error"),
         manifest_changes=list(dep.get("manifest_changes") or []),
+        still_failing=[
+            f"{f.get('test', '')}: {f.get('error', '')}" for f in dep.get("failures") or []
+        ][:5],
     )
 
 
@@ -232,6 +236,8 @@ async def run_evals(
                 f"{result.final_passed}/{result.final_total}  attempts={result.attempts} "
                 f"review={result.review} ${result.cost_usd:.3f} {result.duration_s:.0f}s"
             )
+            for line in result.still_failing:
+                print(f"    still failing: {line}")
             # write after every case so a long eval can be inspected (or aborted) midway
             payload = {
                 "generated_at": generated_at, "repeat": repeat,

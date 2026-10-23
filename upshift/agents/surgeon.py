@@ -744,6 +744,7 @@ class Surgeon:
         previous: Attempt | None,
         research: list[str] | None = None,
         dead_ends: list[str] | None = None,
+        stuck: int = 0,
     ) -> str:
         parts = [
             f"Upgrade: {dep.name} {dep.current} -> {dep.latest}",
@@ -793,7 +794,7 @@ class Surgeon:
                 "the documented changes above cover, in one pass, so the module imports "
                 "cleanly and the tests actually execute."
             )
-        if verification.passed > 0:
+        if verification.passed > 0 and stuck < 2:
             parts.append(
                 f"\nSURGICAL MODE: the suite runs and {verification.passed} tests already pass. "
                 f"Only {verification.failure_count} fail. Make the SMALLEST possible EDIT "
@@ -801,6 +802,16 @@ class Surgeon:
                 "tracebacks and assertions implicate. Do NOT use WRITE, do NOT restructure or "
                 "'clean up' code, and do NOT change anything a passing test exercises. One "
                 "regression costs more than the fix is worth."
+            )
+        elif verification.passed > 0:
+            parts.append(
+                f"\nSTUCK: {stuck} consecutive attempts changed code without changing this "
+                "failure at all, so the approach itself is wrong, not its details. Stop "
+                "patching the previous idea. Re-read the failing test and state exactly what "
+                "it observes (which call, which value). Then re-derive the implementation "
+                "that produces that observation from the library's documented behaviour, and "
+                "rewrite the implicated module in full with ONE WRITE block if that is what "
+                "it takes. Keep every currently passing test passing."
             )
         if dead_ends:
             parts.append(
@@ -1126,6 +1137,7 @@ class Surgeon:
         last_model: str | None = None
         noop_streak = 0  # consecutive attempts that applied nothing
         last_deep = False
+        stuck = 0  # consecutive rollbacks because the edits changed nothing about the failure
         error_history: Counter[str] = Counter()  # error line -> attempts it appeared after
         for failure in verification.failures:
             error_history[error_line(failure.message)] += 1
@@ -1142,8 +1154,12 @@ class Surgeon:
                 )
             dead_ends = [line for line, n in error_history.most_common(8) if n >= 2 and line]
             prompt = self.build_prompt(
-                workspace, dep, dossier, verification, allowed, previous, research, dead_ends
+                workspace, dep, dossier, verification, allowed, previous, research, dead_ends,
+                stuck=stuck,
             )
+            if stuck >= 2:
+                log.info("surgeon: attempt %d in stuck escalation (%d no-effect rollbacks)",
+                         number, stuck)
             log.info(
                 "surgeon: %s attempt %d, %d failing, %d editable files, prompt %d chars",
                 dep.name, number, verification.failure_count, len(allowed), len(prompt),
@@ -1303,12 +1319,14 @@ class Surgeon:
                 self._restore(workspace, snapshot)
                 attempt.rolled_back = True
                 attempt.rollback_reason = reason
+                stuck = stuck + 1 if reason.startswith("exactly the same failures") else 0
                 await self._emit(
                     run_id, EventType.AGENT_MESSAGE, node, attempt=number, rolled_back=True,
                     message=f"attempt {number} rolled back: {reason}",
                 )
                 verification = best
             else:
+                stuck = 0
                 best = verification
             previous = attempt
 
