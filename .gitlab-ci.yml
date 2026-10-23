@@ -7,6 +7,7 @@ include:
   - local: templates/upshift.yml
     inputs:
       package: pydantic
+      repo_path: $CI_PROJECT_DIR/demo-repos/pyshop-legacy
       target_project: gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy
 
 default:

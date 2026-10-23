@@ -30,6 +30,9 @@ spec:
     upshift_ref:
       description: Git ref of Upshift to install.
       default: main
+    repo_path:
+      description: Directory to upgrade. Defaults to the project checkout.
+      default: $CI_PROJECT_DIR
     stage:
       default: deploy
 ---
@@ -57,7 +60,7 @@ upshift-upgrade:
     - |
       PKG_ARGS=""
       if [ -n "$[[ inputs.package ]]" ]; then PKG_ARGS="--package $[[ inputs.package ]]"; fi
-      python -m upshift run "$CI_PROJECT_DIR" $PKG_ARGS \
+      python -m upshift run "$[[ inputs.repo_path ]]" $PKG_ARGS \
         --policy "$[[ inputs.policy ]]" \
         --target-project "$[[ inputs.target_project ]]" \
         --budget "$[[ inputs.budget_usd ]]"
