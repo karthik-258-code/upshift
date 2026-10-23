@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-10-23 06:09 UTC",
+  "repeat": 2,
+  "results": [
+    {
+      "case": "pyshop-dateutil",
+      "package": "python-dateutil",
+      "current": "2.8.2",
+      "target": "3.0.0",
+      "repeat": 1,
+      "success": true,
+      "expected": true,
+      "bare_passed": 17,
+      "bare_total": 17,
+      "bare_phase": "test",
+      "final_passed": 17,
+      "final_total": 17,
+      "attempts": 0,
+      "review": "skipped",
+      "cost_usd": 0.003325,
+      "duration_s": 59.8,
+      "run_id": "bfdf3237d6ca",
+      "error": null,
+      "manifest_changes": [
+        "python-dateutil 2.8.2 -> 3.0.0 in requirements.txt"
+      ],
+      "still_failing": []
+    },
+    {
+      "case": "pyshop-dateutil",
+      "package": "python-dateutil",
+      "current": "2.8.2",
+      "target": "3.0.0",
+      "repeat": 2,
+      "success": true,
+      "expected": true,
+      "bare_passed": 17,
+      "bare_total": 17,
+      "bare_phase": "test",
+      "final_passed": 17,
+      "final_total": 17,
+      "attempts": 0,
+      "review": "skipped",
+      "cost_usd": 0.003308,
+      "duration_s": 19.1,
+      "run_id": "0dce7671acbc",
+      "error": null,
+      "manifest_changes": [
+        "python-dateutil 2.8.2 -> 3.0.0 in requirements.txt"
+      ],
+      "still_failing": []
+    },
+    {
+      "case": "pyshop-pytest",
+      "package": "pytest",
+      "current": "8.3.3",
+      "target": "9.1.1",
+      "repeat": 1,
+      "success": true,
+      "expected": true,
+      "bare_passed": 17,
+      "bare_total": 17,
+      "bare_phase": "test",
+      "final_passed": 17,
+      "final_total": 17,
+      "attempts": 0,
+      "review": "skipped",
+      "cost_usd": 0.003698,
+      "duration_s": 38.9,
+      "run_id": "dbb716da5828",
+      "error": null,
+      "manifest_changes": [
+        "pytest 8.3.3 -> 9.1.1 in requirements-dev.txt"
+      ],
+      "still_failing": []
+    },
+    {
+      "case": "pyshop-pytest",
+      "package": "pytest",
+      "current": "8.3.3",
+      "target": "9.1.1",
+      "repeat": 2,
+      "success": true,
+      "expected": true,
+      "bare_passed": 17,
+      "bare_total": 17,
+      "bare_phase": "test",
+      "final_passed": 17,
+      "final_total": 17,
+      "attempts": 0,
+      "review": "skipped",
+      "cost_usd": 0.016909,
+      "duration_s": 139.3,
+      "run_id": "ad0aa19ffab1",
+      "error": null,
+      "manifest_changes": [
+        "pytest 8.3.3 -> 9.1.1 in requirements-dev.txt"
+      ],
+      "still_failing": []
+    }
+  ]
+}
