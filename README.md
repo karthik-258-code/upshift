@@ -55,6 +55,18 @@ streams them live and can replay any run. [ARCHITECTURE.md](docs/ARCHITECTURE.md
 the convergence machinery (progress ordering, dead-end memory, startup-failure handling,
 captured tracebacks, research planner, stuck escalation) and why each piece exists.
 
+## How Tavily is used
+
+Upshift's research is Tavily end to end. The Historian runs two **Search** queries per
+upgrade (the migration guide for the new major, and the release notes for the exact target
+version), ranks the results, and **Extracts** the full pages (120k to 400k characters for
+pydantic, SQLAlchemy or Flask changelogs), which Nemotron 3.5 Lightning reads whole. The
+fetched URLs are the only ones the Scribe is allowed to cite, so every link in a merge
+request resolves to a page that was actually read. When the Surgeon stalls, the research
+planner writes targeted Search queries from the failing test and traceback (for example
+`flask 3 JSON_SORT_KEYS removed app.json sort_keys`) and the snippets go into the next
+prompt. Results are cached on disk (72 h) so repeated runs do not re-fetch.
+
 ## Quick start (local; model calls are the only cost, cents per upgrade)
 
 Requirements: Python 3.11+, Docker Desktop (sandbox), Node 20+ (UI).

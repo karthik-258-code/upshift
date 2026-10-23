@@ -26,6 +26,22 @@ cases:
     note: >-
       Minor bump that should need no code changes: measures that Upshift does not over-edit.
 
+  - id: pyshop-dateutil
+    repo: demo-repos/pyshop-legacy
+    package: python-dateutil
+    expect: upgraded
+    note: >-
+      2.8 -> 3.0 major bump of a utility library used in pricing; a major with few or no
+      breaking changes for this code is a test of restraint as much as of migration.
+
+  - id: pyshop-pytest
+    repo: demo-repos/pyshop-legacy
+    package: pytest
+    expect: upgraded
+    note: >-
+      8 -> 9: upgrading the test framework itself (a dev dependency); the thing that verifies
+      the upgrade is the thing being upgraded.
+
   - id: flask-notes-flask
     repo: demo-repos/flask-notes
     package: flask
