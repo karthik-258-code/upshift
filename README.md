@@ -108,6 +108,7 @@ macOS / Linux: same commands with `source .venv/bin/activate`, or `./scripts/run
 | `GITLAB_TOKEN` | Opening merge requests in `--target-project` (optional; drafts otherwise) |
 | `DEFAULT_BUDGET_USD` | Per-run spend cap, default 2.00 |
 | `EXECUTOR` | `docker` (default) or `nebius` (requires `NEBIUS_ACCEPT_CHARGES=1` and the `NEBIUS_*` settings in `upshift/config.py`) |
+| `SANDBOX_IMAGE` | `python:3.12-slim` (default); set `python:3.12` for projects whose dependencies need a compiler |
 
 Tests: `pytest -q` (fully mocked; the real-Docker test runs with `UPSHIFT_DOCKER_TESTS=1`) and `ruff check .`.
 

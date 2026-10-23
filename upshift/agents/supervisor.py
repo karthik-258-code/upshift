@@ -202,7 +202,7 @@ class Supervisor:
         historian = Historian(self.llm, self.router, self.search, self.extract, self.bus)
         dossier = await historian.research(dep, run.id, budget)
 
-        verifier = Verifier(self.executor, self.bus)
+        verifier = Verifier(self.executor, self.bus, image=self.settings.sandbox_image)
         surgeon = Surgeon(
             self.llm, self.router, verifier, self.bus, self.pypi, search=self.search
         )
@@ -210,7 +210,10 @@ class Supervisor:
 
         review = None
         if surgery.success:
-            reviewer = Reviewer(self.llm, self.router, self.executor, self.bus)
+            reviewer = Reviewer(
+                self.llm, self.router, self.executor, self.bus,
+                image=self.settings.sandbox_image,
+            )
             review = await reviewer.review(workspace, dep, dossier, surgery, run.id, budget)
             if review.actionable:
                 polish = await surgeon.polish(

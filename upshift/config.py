@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     llm_max_retries: int = 4
     tavily_cache_ttl_hours: float = 72.0
     executor: str = "docker"  # docker | nebius
+    sandbox_image: str = "python:3.12-slim"  # python:3.12 when a project needs a compiler
     log_level: str = "INFO"
 
     # Nebius Serverless AI Jobs executor (EXECUTOR=nebius). Paid compute: nothing is created
