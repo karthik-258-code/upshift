@@ -8,8 +8,8 @@ is GitLab Pages, so it will).
 
 | Item | Where |
 | --- | --- |
-| Repository | https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/nvidxnebi |
-| Hosted demo (recorded replay of real runs) | https://gitlab-ai-hackathon.gitlab.io/transcend-october-2026/43491832/nvidxnebi/ |
+| Repository | https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43699047/nvxnb |
+| Hosted demo (recorded replay of real runs) | https://gitlab-ai-hackathon.gitlab.io/transcend-october-2026/43699047/nvxnb/ |
 | Merge requests Upshift opened | pyshop-legacy [!6](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/6) (pydantic), [!7](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/7) (SQLAlchemy); flask-notes [!1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/flask-notes/-/merge_requests/1) (Flask) |
 | Video (3 to 4 minutes) | link to be added |
 | Track | Coding and Agentic Engineering |
@@ -22,7 +22,7 @@ without any visibility change on our side.
 
 ## Checklist before freeze (29 Oct, 18:00 IST)
 
-- [ ] `pytest -q` and `ruff check .` green on `main`; CI pipeline green.
+- [ ] `pytest -q` and `ruff check .` green on `dev`; CI pipeline green.
 - [ ] One fresh run of each showcase case from the browser; recordings re-exported
       (`python -m upshift export --succeeded 8 --failed 2`) and pushed; Pages redeployed.
 - [ ] Eval table in README matches `evals/results/latest.md` exactly.

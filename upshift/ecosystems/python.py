@@ -179,13 +179,16 @@ RANGE_LINE_PATTERN = re.compile(
 )
 
 
-def bump_pin(text: str, name: str, new_version: str) -> tuple[str, bool]:
+def bump_pin(
+    text: str, name: str, new_version: str, *, relax_ranges: bool = False
+) -> tuple[str, bool]:
     """Rewrite every `name==old` pin for this package (any spelling, optional extras).
 
     Works on requirements files and on PEP 621 dependency strings inside pyproject.toml.
-    When the package is held by a range instead of an exact pin (`Werkzeug<3.0`), the
-    requirements line is replaced by an exact pin of `new_version`, keeping extras, marker
-    and trailing comment, so a pip conflict against a range is resolved the same way.
+    With `relax_ranges=True` (pip-conflict co-upgrades only), a package held by a range
+    instead of an exact pin (`Werkzeug<3.0`) has its requirements line replaced by an exact
+    pin of `new_version`, keeping extras, marker and trailing comment. By default ranges
+    are left alone, so the upgraded package itself must be pinned with `==`.
     """
     target = normalize(name)
     changed = False
@@ -198,8 +201,8 @@ def bump_pin(text: str, name: str, new_version: str) -> tuple[str, bool]:
         return f"{match.group('prefix')}{new_version}"
 
     updated = PIN_PATTERN.sub(replace, text)
-    if changed:
-        return updated, True
+    if changed or not relax_ranges:
+        return updated, changed
 
     def relax(match: re.Match[str]) -> str:
         nonlocal changed

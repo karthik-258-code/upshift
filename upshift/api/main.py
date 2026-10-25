@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
@@ -132,7 +132,7 @@ def create_app(
     app = FastAPI(title="Upshift", version=__version__)
     app.state.ctx = ctx
 
-    async def guarded(run: Run, coro: Coroutine[Any, Any, None]) -> None:
+    async def guarded(run: Run, coro: Awaitable[None]) -> None:
         try:
             await coro
         except Exception as exc:  # noqa: BLE001

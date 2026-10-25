@@ -245,7 +245,8 @@ class JobHandle:
 
 def job_id_of(data: dict[str, Any]) -> str:
     """The docs say to save the returned resource id; tolerate the two shapes it may take."""
-    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    raw_metadata = data.get("metadata")
+    metadata: dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
     for candidate in (data.get("resourceId"), metadata.get("id"), data.get("id")):
         if candidate:
             return str(candidate)
@@ -253,7 +254,8 @@ def job_id_of(data: dict[str, Any]) -> str:
 
 
 def job_state_of(data: dict[str, Any]) -> str:
-    status = data.get("status") if isinstance(data.get("status"), dict) else {}
+    raw_status = data.get("status")
+    status: dict[str, Any] = raw_status if isinstance(raw_status, dict) else {}
     return str(status.get("state") or data.get("state") or "").upper()
 
 

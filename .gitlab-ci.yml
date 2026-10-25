@@ -8,6 +8,7 @@ include:
     inputs:
       package: pydantic
       repo_path: $CI_PROJECT_DIR/demo-repos/pyshop-legacy
+      upshift_install: $CI_PROJECT_DIR
       target_project: gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy
 
 default:
