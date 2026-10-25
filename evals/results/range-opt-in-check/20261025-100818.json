@@ -1,0 +1,66 @@
+{
+  "generated_at": "2026-10-25 10:08 UTC",
+  "repeat": 2,
+  "results": [
+    {
+      "case": "flask-notes-flask",
+      "package": "flask",
+      "current": "2.0.3",
+      "target": "3.1.3",
+      "repeat": 1,
+      "success": false,
+      "expected": false,
+      "bare_passed": 0,
+      "bare_total": 1,
+      "bare_phase": "collection",
+      "final_passed": 8,
+      "final_total": 9,
+      "attempts": 12,
+      "review": null,
+      "cost_usd": 0.192546,
+      "duration_s": 386.1,
+      "run_id": "a7b8410f2d6f",
+      "error": "tests still failing after 12 attempt(s)",
+      "manifest_changes": [
+        "flask 2.0.3 -> 3.1.3 in requirements.txt",
+        "click co-upgraded to 8.5.0 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "itsdangerous co-upgraded to 2.2.0 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "jinja2 co-upgraded to 3.1.6 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "werkzeug co-upgraded to 3.1.9 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "added markupsafe==3.0.4 to requirements.txt"
+      ],
+      "still_failing": [
+        "tests.test_api::test_keys_keep_insertion_order: E       AssertionError: assert ['id', 'price', 'title'] == ['id', 'title', 'price']"
+      ]
+    },
+    {
+      "case": "flask-notes-flask",
+      "package": "flask",
+      "current": "2.0.3",
+      "target": "3.1.3",
+      "repeat": 2,
+      "success": true,
+      "expected": true,
+      "bare_passed": 0,
+      "bare_total": 1,
+      "bare_phase": "collection",
+      "final_passed": 9,
+      "final_total": 9,
+      "attempts": 2,
+      "review": "approve",
+      "cost_usd": 0.027378,
+      "duration_s": 118.9,
+      "run_id": "c687eaddda98",
+      "error": null,
+      "manifest_changes": [
+        "flask 2.0.3 -> 3.1.3 in requirements.txt",
+        "click co-upgraded to 8.5.0 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "itsdangerous co-upgraded to 2.2.0 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "jinja2 co-upgraded to 3.1.6 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "werkzeug co-upgraded to 3.1.9 in requirements.txt (pip: incompatible with flask 3.1.3)",
+        "added markupsafe==3.0.4 to requirements.txt"
+      ],
+      "still_failing": []
+    }
+  ]
+}
