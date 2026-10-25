@@ -93,9 +93,9 @@ def conflicting_pins(log: str, manifest_text: str, manifest: str, upgraded: str)
                 if same_file and int(ref.group(2)) in by_line:
                     candidates.append(by_line[int(ref.group(2))])
                 continue
-            name = PACKAGE_TOKEN.match(token)
-            if name:
-                candidates.append(normalize(name.group(0)))
+            token_match = PACKAGE_TOKEN.match(token)
+            if token_match:
+                candidates.append(normalize(token_match.group(0)))
     candidates += [normalize(m.group(1)) for m in CONFLICT_PATTERN.finditer(log)]
     found: list[str] = []
     for name in candidates:
