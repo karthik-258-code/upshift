@@ -171,10 +171,21 @@ PIN_PATTERN = re.compile(
 )
 
 
+# a whole requirements line holding a range (`Werkzeug<3.0`, `pytest>=7,<8 ; marker  # note`)
+RANGE_LINE_PATTERN = re.compile(
+    r"^(?P<prefix>[ \t]*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<extras>\[[^\]]*\])?)"
+    r"[ \t]*(?P<spec>[<>!~][^;#\r\n]*?)(?P<rest>[ \t]*(?:;[^#\r\n]*)?(?:[ \t]*#.*)?)$",
+    re.MULTILINE,
+)
+
+
 def bump_pin(text: str, name: str, new_version: str) -> tuple[str, bool]:
     """Rewrite every `name==old` pin for this package (any spelling, optional extras).
 
     Works on requirements files and on PEP 621 dependency strings inside pyproject.toml.
+    When the package is held by a range instead of an exact pin (`Werkzeug<3.0`), the
+    requirements line is replaced by an exact pin of `new_version`, keeping extras, marker
+    and trailing comment, so a pip conflict against a range is resolved the same way.
     """
     target = normalize(name)
     changed = False
@@ -186,7 +197,18 @@ def bump_pin(text: str, name: str, new_version: str) -> tuple[str, bool]:
         changed = True
         return f"{match.group('prefix')}{new_version}"
 
-    return PIN_PATTERN.sub(replace, text), changed
+    updated = PIN_PATTERN.sub(replace, text)
+    if changed:
+        return updated, True
+
+    def relax(match: re.Match[str]) -> str:
+        nonlocal changed
+        if normalize(match.group("name")) != target:
+            return match.group(0)
+        changed = True
+        return f"{match.group('prefix')}=={new_version}{match.group('rest')}"
+
+    return RANGE_LINE_PATTERN.sub(relax, text), changed
 
 
 def add_requirement(text: str, requirement: str) -> str:

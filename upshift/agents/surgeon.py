@@ -73,14 +73,16 @@ def conflicting_pins(log: str, manifest_text: str, manifest: str, upgraded: str)
     `Cannot install -r requirements.txt (line 1) and click==8.0.4 because ...`, where a
     `(line N)` reference points at a line of the requirements file. In verbose mode it adds
     `flask 3.1.2 depends on Werkzeug>=3.1` lines under "The conflict is caused by". Only
-    packages pinned in the same requirements file are returned, in order of first mention;
-    anything unpinned pip can already resolve by itself.
+    packages constrained in the same requirements file (exact pins or ranges) are returned,
+    in order of first mention; anything unconstrained pip can already resolve by itself.
     """
     if not manifest.endswith(".txt"):
         return []
     deps = parse_requirements(manifest_text, manifest)
-    pinned = {d.name for d in deps if d.pinned}
-    by_line = {d.line: d.name for d in deps if d.pinned and d.line is not None}
+    # any version constraint counts: pip refuses `Werkzeug<3.0` next to Flask 3 exactly as
+    # it refuses `Werkzeug==2.3.7`, and both are ours to rewrite
+    pinned = {d.name for d in deps if d.specifier}
+    by_line = {d.line: d.name for d in deps if d.specifier and d.line is not None}
     candidates: list[str] = []
     for match in CANNOT_INSTALL_PATTERN.finditer(log):
         for token in re.split(r",\s*|\s+and\s+", match.group(1)):
