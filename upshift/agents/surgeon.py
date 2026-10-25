@@ -702,7 +702,7 @@ class Surgeon:
             if not info or not info.latest:
                 continue
             text = _read(workspace, dep.source) or ""
-            updated, changed = bump_pin(text, name, info.latest)
+            updated, changed = bump_pin(text, name, info.latest, relax_ranges=True)
             if changed:
                 _write(workspace, dep.source, updated)
                 changes.append(

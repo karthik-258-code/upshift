@@ -780,11 +780,15 @@ def test_range_constraints_count_as_conflicting_pins() -> None:
         "package versions have conflicting dependencies.\nERROR: ResolutionImpossible"
     )
     assert conflicting_pins(quiet, manifest_text, "requirements.txt", "flask") == ["werkzeug"]
-    updated, changed = bump_pin(manifest_text, "werkzeug", "3.1.9")
+    # ranges are only rewritten on request (co-upgrade path); the default leaves them
+    assert bump_pin(manifest_text, "werkzeug", "3.1.9") == (manifest_text, False)
+    updated, changed = bump_pin(manifest_text, "werkzeug", "3.1.9", relax_ranges=True)
     assert changed and updated == "Flask==2.2.5\nWerkzeug==3.1.9\ngunicorn==20.1.0\n"
     line = "pytest[extra]>=7,<8 ; python_version >= '3.8'  # tests\n"
-    assert bump_pin(line, "pytest", "9.1.1") == (
+    assert bump_pin(line, "pytest", "9.1.1", relax_ranges=True) == (
         "pytest[extra]==9.1.1 ; python_version >= '3.8'  # tests\n", True
     )
     # other packages and exact pins are left alone by the range pass
-    assert bump_pin("Werkzeug<3.0\n", "flask", "3.1.3") == ("Werkzeug<3.0\n", False)
+    assert bump_pin("Werkzeug<3.0\n", "flask", "3.1.3", relax_ranges=True) == (
+        "Werkzeug<3.0\n", False
+    )
