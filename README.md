@@ -35,7 +35,9 @@ version pin changed. Full tables in [`evals/results/`](evals/results/).
 2026-10-23 01:41 UTC, [full table](evals/results/latest.md)). The Flask miss led to the
 "stuck escalation" mechanism; a follow-up check of that case alone then landed
 [3 of 3](evals/results/flask-stuck-check/latest.md) (12, 9 and 9 attempts; $0.276, $0.162,
-$0.144). The Flask bare-bump column reads "import error" because pip's install first failed
+$0.144). A re-check on 2026-10-25 landed
+[1 of 2](evals/results/range-opt-in-check/latest.md) (2 attempts, $0.027; the miss stuck at
+8/9 after 12 attempts, $0.193), so Flask with stuck escalation stands at 4 of 5. The Flask bare-bump column reads "import error" because pip's install first failed
 on four pinned packages, which Upshift co-upgraded before any test could run. Every number
 comes from recorded `llm.call` and `test.result` events, not estimates. Failures are kept in
 the logs on purpose; they are how the convergence machinery was earned.
