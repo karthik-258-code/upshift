@@ -72,10 +72,10 @@ import, nine tests. Three attempts." Show the Review tab with the audit badge: "
 reviewer claimed the JSON provider returned the wrong type. The Auditor checked and
 contradicted it. The MR shipped ready for review instead of as a Draft."
 
-**2:50 to 3:25. Numbers and the stack.** Screen: Launch page eval table. "Eight runs, two
-per case, through the real pipeline. Seven landed; one got stuck at eight of nine and taught
-us the stuck-escalation mechanism, after which the same case landed three of three. Mean
-cost under ten cents per upgrade. All of it on Nebius Token Factory: Lightning for reading,
+**2:50 to 3:25. Numbers and the stack.** Screen: Launch page eval table. "Eighteen runs,
+three per case, through the real pipeline. Seventeen landed. Flask, the hard case, still
+sometimes sticks at eight of nine; an earlier miss there taught us the stuck-escalation
+mechanism. Mean cost about seven cents per upgrade. All of it on Nebius Token Factory: Lightning for reading,
 Ultra for surgery and review, Super for prose. Tavily for the research. Every number comes
 from recorded events, not estimates."
 
