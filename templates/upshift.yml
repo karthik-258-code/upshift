@@ -5,13 +5,14 @@
 # every edit linked to the changelog line that justifies it.
 #
 #   include:
-#     - project: gitlab-ai-hackathon/transcend-october-2026/43491832/nvidxnebi
+#     - project: gitlab-ai-hackathon/transcend-october-2026/43699047/nvxnb
 #       file: templates/upshift.yml
 #       inputs:
 #         package: pydantic
 #
 # Required CI/CD variables (masked): NEBIUS_API_KEY, TAVILY_API_KEY, and a GITLAB_TOKEN with
-# `api` scope so the job can push the branch and open the merge request.
+# `api` scope so the job can push the branch and open the merge request. Without the first
+# two the job is not added to the pipeline at all.
 
 spec:
   inputs:
@@ -29,7 +30,7 @@ spec:
       default: $CI_PROJECT_PATH
     upshift_ref:
       description: Git ref of Upshift to install.
-      default: main
+      default: dev
     upshift_install:
       description: pip requirement or local path to install Upshift from instead of the git repo (for example $CI_PROJECT_DIR when running inside the Upshift project).
       default: ""
@@ -52,8 +53,9 @@ upshift-upgrade:
     EXECUTOR: docker
     DEFAULT_BUDGET_USD: $[[ inputs.budget_usd ]]
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-    - when: manual
+    - if: $NEBIUS_API_KEY && $TAVILY_API_KEY && $CI_PIPELINE_SOURCE == "schedule"
+    - if: $NEBIUS_API_KEY && $TAVILY_API_KEY
+      when: manual
       allow_failure: true
   before_script:
     - apt-get update -qq && apt-get install -y -qq docker.io >/dev/null
@@ -61,7 +63,7 @@ upshift-upgrade:
       if [ -n "$[[ inputs.upshift_install ]]" ]; then
         pip install -q "$[[ inputs.upshift_install ]]"
       else
-        pip install -q "git+https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/nvidxnebi.git@$[[ inputs.upshift_ref ]]"
+        pip install -q "git+https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43699047/nvxnb.git@$[[ inputs.upshift_ref ]]"
       fi
     - docker version --format '{{.Server.Version}}'
   script:
