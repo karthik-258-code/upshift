@@ -16,28 +16,41 @@ Factory**, with **Tavily** for changelog research. Apache 2.0.
 
 ## Results
 
-`python -m upshift eval`, two repeats per case, real pipeline, no merge requests published.
+`python -m upshift eval --repeat 3`, three repeats per case, real pipeline, no merge requests published.
 "Bare bump" is what a dependabot-style tool leaves you with: tests passing after only the
 version pin changed. Full tables in [`evals/results/`](evals/results/).
 
 | Case | Upgrade | Bare bump | Upshift | Attempts | Review | Cost | Time | Outcome |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| pyshop-pydantic | pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 5 | approve | $0.081 | 2m36s | pass |
-| pyshop-pydantic #2 | pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 9 | approve | $0.225 | 5m19s | pass |
-| pyshop-sqlalchemy | sqlalchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 1 | approve | $0.031 | 0m59s | pass |
-| pyshop-sqlalchemy #2 | sqlalchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 1 | approve | $0.033 | 1m12s | pass |
-| pyshop-requests | requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 | skipped | $0.001 | 0m18s | pass |
-| pyshop-requests #2 | requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 | skipped | $0.001 | 0m19s | pass |
-| flask-notes-flask | flask 2.0.3 -> 3.1.3 | 0 (import error) | **9/9** | 3 | approve | $0.050 | 2m03s | pass |
-| flask-notes-flask #2 | flask 2.0.3 -> 3.1.3 | 0 (import error) | **8/9** | 12 | - | $0.335 | 6m59s | FAIL (tests still failing after 12 attempt(s)) |
+| pyshop-pydantic | pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 5 | approve | $0.158 | 3m47s | pass |
+| pyshop-pydantic #2 | pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 8 | approve | $0.283 | 8m14s | pass |
+| pyshop-pydantic #3 | pydantic 1.10.13 -> 2.14.1 | 0 (import error) | **17/17** | 4 | approve | $0.066 | 3m50s | pass |
+| pyshop-sqlalchemy | sqlalchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 3 | approve | $0.046 | 2m15s | pass |
+| pyshop-sqlalchemy #2 | sqlalchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 1 | approve | $0.028 | 1m17s | pass |
+| pyshop-sqlalchemy #3 | sqlalchemy 1.4.49 -> 2.1.6 | 15/17 | **17/17** | 1 | approve | $0.037 | 1m14s | pass |
+| pyshop-requests | requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 | skipped | $0.001 | 0m17s | pass |
+| pyshop-requests #2 | requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 | skipped | $0.001 | 0m17s | pass |
+| pyshop-requests #3 | requests 2.28.2 -> 2.34.2 | 17/17 | **17/17** | 0 | skipped | $0.001 | 0m20s | pass |
+| pyshop-dateutil | python-dateutil 2.8.2 -> 3.0.0 | 17/17 | **17/17** | 0 | skipped | $0.003 | 0m23s | pass |
+| pyshop-dateutil #2 | python-dateutil 2.8.2 -> 3.0.0 | 17/17 | **17/17** | 0 | skipped | $0.003 | 0m18s | pass |
+| pyshop-dateutil #3 | python-dateutil 2.8.2 -> 3.0.0 | 17/17 | **17/17** | 0 | skipped | $0.003 | 0m18s | pass |
+| pyshop-pytest | pytest 8.3.3 -> 9.1.1 | 17/17 | **17/17** | 0 | skipped | $0.004 | 0m34s | pass |
+| pyshop-pytest #2 | pytest 8.3.3 -> 9.1.1 | 17/17 | **17/17** | 0 | skipped | $0.003 | 0m20s | pass |
+| pyshop-pytest #3 | pytest 8.3.3 -> 9.1.1 | 17/17 | **17/17** | 0 | skipped | $0.009 | 0m57s | pass |
+| flask-notes-flask | flask 2.0.3 -> 3.1.3 | 0 (import error) | **9/9** | 11 | approve | $0.205 | 5m33s | pass |
+| flask-notes-flask #2 | flask 2.0.3 -> 3.1.3 | 0 (import error) | **8/9** | 12 | - | $0.402 | 8m27s | FAIL (tests still failing after 12 attempt(s)) |
+| flask-notes-flask #3 | flask 2.0.3 -> 3.1.3 | 0 (import error) | **9/9** | 2 | approve | $0.028 | 1m48s | pass |
 
-**7/8 upgrades landed (87%).** Mean cost $0.095; total $0.76 in 20 minutes (eval of
-2026-10-23 01:41 UTC, [full table](evals/results/latest.md)). The Flask miss led to the
-"stuck escalation" mechanism; a follow-up check of that case alone then landed
-[3 of 3](evals/results/flask-stuck-check/latest.md) (12, 9 and 9 attempts; $0.276, $0.162,
-$0.144). A re-check on 2026-10-25 landed
-[1 of 2](evals/results/range-opt-in-check/latest.md) (2 attempts, $0.027; the miss stuck at
-8/9 after 12 attempts, $0.193), so Flask with stuck escalation stands at 4 of 5. The Flask bare-bump column reads "import error" because pip's install first failed
+**17/18 upgrades landed (94%).** Mean cost $0.071; total $1.28 in 40 minutes (eval of
+2026-10-25 11:48 UTC, [full table](evals/results/latest.md)). The previous eval
+(2026-10-23, two repeats, [JSON](evals/results/20261023-014137.json)) landed 7/8; its Flask
+miss led to the "stuck escalation" mechanism. Since then Flask has landed 6 of 8:
+[3 of 3](evals/results/flask-stuck-check/latest.md) on 2026-10-23, then
+[1 of 2](evals/results/range-opt-in-check/latest.md) and 2 of 3 in the table above on
+2026-10-25. Its misses stall at 8/9 after 12 attempts, and it is the most expensive case
+($0.03 to $0.40 per run). The pydantic, SQLAlchemy and Flask cases need code edits; requests,
+python-dateutil and pytest land with zero edits, because the suite is already green after
+the bump. The Flask bare-bump column reads "import error" because pip's install first failed
 on four pinned packages, which Upshift co-upgraded before any test could run. Every number
 comes from recorded `llm.call` and `test.result` events, not estimates. Failures are kept in
 the logs on purpose; they are how the convergence machinery was earned.
@@ -144,7 +157,7 @@ docs/          ARCHITECTURE, FEEDBACK, BLUEPRINT, day logs
 ## Limitations, honestly
 
 - Python only (requirements.txt and pyproject); the ecosystem layer is pluggable but only one is implemented.
-- Convergence is probabilistic: the same input can take 3 or 12 attempts. The eval tables show the spread.
+- Convergence is probabilistic: the same input can take 2 or 12 attempts. The eval tables show the spread.
 - "Green and approved" is not "idiomatic": the Flask MR hand-rolls a `JSONProvider` where a maintainer would subclass `DefaultJSONProvider`. The Reviewer catches correctness, not taste.
 - The Auditor can be wrong too; it is a second opinion with evidence, not an oracle.
 - The Nebius Serverless Jobs executor is built on the documented API and unit-tested, but was not exercised against the live service (no compute credits).
