@@ -5,7 +5,7 @@
 # every edit linked to the changelog line that justifies it.
 #
 #   include:
-#     - project: gitlab-ai-hackathon/transcend-october-2026/43699047/nvxnb
+#     - project: notorandyt/upshift
 #       file: templates/upshift.yml
 #       inputs:
 #         package: pydantic
@@ -63,7 +63,7 @@ upshift-upgrade:
       if [ -n "$[[ inputs.upshift_install ]]" ]; then
         pip install -q "$[[ inputs.upshift_install ]]"
       else
-        pip install -q "git+https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43699047/nvxnb.git@$[[ inputs.upshift_ref ]]"
+        pip install -q "git+https://gitlab.com/notorandyt/upshift.git@$[[ inputs.upshift_ref ]]"
       fi
     - docker version --format '{{.Server.Version}}'
   script:
