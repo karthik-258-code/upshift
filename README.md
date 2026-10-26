@@ -10,7 +10,7 @@ Powered by **NVIDIA Nemotron 3** (Nano, Super, Ultra, 3.5 Lightning) on **Nebius
 Factory**, with **Tavily** for changelog research. Apache 2.0.
 
 - **Live replay (Mission Control):** https://gitlab-ai-hackathon.gitlab.io/transcend-october-2026/43699047/nvxnb/ : real runs, every event, diff and review; drag the slider.
-- **Merge requests Upshift opened:** [pydantic 1.10 -> 2.14](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/6), [SQLAlchemy 1.4 -> 2.1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/7), [Flask 2.0 -> 3.1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/flask-notes/-/merge_requests/1) (after co-upgrading Werkzeug, Jinja2, click and itsdangerous from pip's conflict report).
+- **Merge requests Upshift opened:** [pydantic 1.10 -> 2.14](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/1), [SQLAlchemy 1.4 -> 2.1](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/2), [Flask 2.0 -> 3.1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1) (after co-upgrading Werkzeug, Jinja2, click and itsdangerous from pip's conflict report).
 - **Docs:** [ARCHITECTURE](docs/ARCHITECTURE.md) · [FEEDBACK for Nebius/NVIDIA](docs/FEEDBACK.md) · [SUBMISSION](docs/SUBMISSION.md) · day logs [5](docs/examples/day5-runs.md), [6-7](docs/examples/day6-7-runs.md), [8-9](docs/examples/day8-9-runs.md) · [BLUEPRINT](docs/BLUEPRINT.md)
 - **CI:** include [`templates/upshift.yml`](templates/upshift.yml) in any Python project's pipeline to run Upshift as a job that opens the MR in that project.
 

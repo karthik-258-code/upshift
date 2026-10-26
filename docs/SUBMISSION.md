@@ -10,15 +10,16 @@ is GitLab Pages, so it will).
 | --- | --- |
 | Repository | https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43699047/nvxnb |
 | Hosted demo (recorded replay of real runs) | https://gitlab-ai-hackathon.gitlab.io/transcend-october-2026/43699047/nvxnb/ |
-| Merge requests Upshift opened | pyshop-legacy [!6](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/6) (pydantic), [!7](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy/-/merge_requests/7) (SQLAlchemy); flask-notes [!1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/flask-notes/-/merge_requests/1) (Flask) |
+| Merge requests Upshift opened | pyshop-legacy [!1](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/1) (pydantic), [!2](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/2) (SQLAlchemy); flask-notes [!1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1) (Flask) |
 | Video (3 to 4 minutes) | link to be added |
 | Track | Coding and Agentic Engineering |
 | Also targeting | Best Use of Tavily; Most Valuable Feedback ([docs/FEEDBACK.md](FEEDBACK.md)) |
 | Results | [README](../README.md#results), [evals/results/](../evals/results/) |
 | Architecture | [docs/ARCHITECTURE.md](ARCHITECTURE.md) |
 
-The projects live inside the hackathon group; the judges are its owners and see them
-without any visibility change on our side.
+Everything linked is public: the repository and Pages site in the hackathon group, and the
+two demo projects (`notorandyt/pyshop-legacy`, `notorandyt/flask-notes`) that hold the merge
+requests. Check each link logged out before submitting.
 
 ## Checklist before freeze (29 Oct, 18:00 IST)
 
@@ -39,12 +40,12 @@ Record at 1920x1080, browser zoomed to 110%, dark theme, no notifications. Voice
 screen; no face cam needed. Record the live run segment in real time and cut the waiting;
 keep timestamps visible so the compression is honest.
 
-**0:00 to 0:20. Hook.** Screen: pyshop-legacy MR !6, the Changes tab, scrolled to
+**0:00 to 0:20. Hook.** Screen: pyshop-legacy MR !1, the Changes tab, scrolled to
 `models.py`. "This merge request upgraded pydantic from 1 to 2 in a legacy codebase:
 validators, config, root models, the settings split. Seventeen tests pass. A second model
 reviewed it. No human wrote a line of it. Dependabot opens the PR; Upshift finishes it."
 
-**0:20 to 0:50. The problem.** Screen: MR !6 description, scrolled to the "Code changes and
+**0:20 to 0:50. The problem.** Screen: MR !1 description, scrolled to the "Code changes and
 why" table. "A version bump is the easy part. The work is reading the changelog, finding
 which of the forty documented changes touch your code, rewriting it, and proving nothing
 broke. Upshift does that, and it shows its evidence: every edit links to the changelog line
@@ -86,8 +87,8 @@ Upshift: dependency upgrades that finish the job."
 
 ## Shot list (exact clicks)
 
-1. Browser tab A: MR !6 Changes tab, pre-scrolled to `pyshop/models.py`.
-2. Browser tab B: MR !6 Overview, pre-scrolled to "Code changes and why".
+1. Browser tab A: pyshop-legacy MR !1 Changes tab, pre-scrolled to `pyshop/models.py`.
+2. Browser tab B: pyshop-legacy MR !1 Overview, pre-scrolled to "Code changes and why".
 3. Browser tab C: http://localhost:8000 with the API running (`uvicorn ... --port 8000`),
    form pre-filled. Start recording before clicking **Start upgrade run**.
 4. During the run: left column shows `pydantic` pulsing; click **Evidence** at the first
