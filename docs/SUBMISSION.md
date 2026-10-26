@@ -8,8 +8,8 @@ is GitLab Pages, so it will).
 
 | Item | Where |
 | --- | --- |
-| Repository | https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43699047/nvxnb |
-| Hosted demo (recorded replay of real runs) | https://gitlab-ai-hackathon.gitlab.io/transcend-october-2026/43699047/nvxnb/ |
+| Repository | https://gitlab.com/notorandyt/upshift |
+| Hosted demo (recorded replay of real runs) | https://notorandyt.gitlab.io/upshift/ |
 | Merge requests Upshift opened | pyshop-legacy [!1](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/1) (pydantic), [!2](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/2) (SQLAlchemy); flask-notes [!1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1) (Flask) |
 | Video (3 to 4 minutes) | link to be added |
 | Track | Coding and Agentic Engineering |
@@ -17,9 +17,9 @@ is GitLab Pages, so it will).
 | Results | [README](../README.md#results), [evals/results/](../evals/results/) |
 | Architecture | [docs/ARCHITECTURE.md](ARCHITECTURE.md) |
 
-Everything linked is public: the repository and Pages site in the hackathon group, and the
-two demo projects (`notorandyt/pyshop-legacy`, `notorandyt/flask-notes`) that hold the merge
-requests. Check each link logged out before submitting.
+Everything linked is public and lives under `notorandyt`: the repository, its Pages site,
+and the two demo projects (`notorandyt/pyshop-legacy`, `notorandyt/flask-notes`) that hold
+the merge requests. Check each link logged out before submitting.
 
 ## Checklist before freeze (29 Oct, 18:00 IST)
 
@@ -68,10 +68,12 @@ Then **Merge request** tab, click the MR link.
 **2:10 to 2:50. The hard case.** Screen: Pages replay, open the Flask run. "Flask 2 to 3.
 pip refuses the install: Werkzeug, Jinja2, click and itsdangerous are pinned. Upshift reads
 pip's conflict report and co-upgrades them, four rounds, no model involved." Drag the
-slider to the co-upgrade events. "Then five removed APIs, a conftest that will not even
-import, nine tests. Three attempts." Show the Review tab with the audit badge: "Here the
-reviewer claimed the JSON provider returned the wrong type. The Auditor checked and
-contradicted it. The MR shipped ready for review instead of as a Draft."
+slider to the co-upgrade events. "Then removed APIs and a conftest that will not even
+import. Eight of nine tests pass after three attempts; the last one, JSON key order, does
+not move." Show the Attempts tab: "Two attempts are rolled back because they changed
+nothing, so stuck escalation tells the model its approach is wrong and lets it rewrite the
+module. Attempt six: nine of nine." Show the Review tab: "The reviewer approves, and the
+merge request is public, linked from the README."
 
 **2:50 to 3:25. Numbers and the stack.** Screen: Launch page eval table. "Eighteen runs,
 three per case, through the real pipeline. Seventeen landed. Flask, the hard case, still
@@ -95,7 +97,7 @@ Upshift: dependency upgrades that finish the job."
    `dossier.ready`; click **Attempts** after the first `test.result`; click **Review** at
    `review.verdict`; click **Merge request** at `mr.opened`; click the green button.
 5. Browser tab D: the Pages URL; click the Flask run (top of Recent runs); drag the slider to
-   around event 15 (co-upgrades), then to the end; click **Review**.
+   the co-upgrade events, then to the end; click **Attempts**, then **Review**.
 6. Browser tab D: click **Upshift** (top-left) to return to Launch; scroll to the eval table.
 7. Browser tab E: README on GitLab, scrolled to "Limitations, honestly".
 

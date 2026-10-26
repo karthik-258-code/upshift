@@ -5,7 +5,7 @@ import { navigate } from "../App";
 const DEMO = {
   repo_url: "demo-repos/pyshop-legacy",
   packages: "pydantic",
-  target_project: "gitlab-ai-hackathon/transcend-october-2026/43491832/pyshop-legacy",
+  target_project: "notorandyt/pyshop-legacy",
 };
 
 function StatusPill({ status }: { status: string }) {
