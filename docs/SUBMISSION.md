@@ -11,7 +11,7 @@ is GitLab Pages, so it will).
 | Repository | https://gitlab.com/notorandyt/upshift |
 | Hosted demo (recorded replay of real runs) | https://notorandyt.gitlab.io/upshift/ |
 | Merge requests Upshift opened | pyshop-legacy [!1](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/1) (pydantic), [!2](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/2) (SQLAlchemy); flask-notes [!1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1) (Flask) |
-| Video (3 to 4 minutes) | link to be added |
+| Video (under 3 minutes, public on YouTube) | link to be added |
 | Track | Coding and Agentic Engineering |
 | Also targeting | Best Use of Tavily; Most Valuable Feedback ([docs/FEEDBACK.md](FEEDBACK.md)) |
 | Results | [README](../README.md#results), [evals/results/](../evals/results/) |
@@ -23,69 +23,61 @@ the merge requests. Check each link logged out before submitting.
 
 ## Checklist before freeze (29 Oct, 18:00 IST)
 
-- [ ] `pytest -q` and `ruff check .` green on `dev`; CI pipeline green.
-- [ ] One fresh run of each showcase case from the browser; recordings re-exported
-      (`python -m upshift export --succeeded 8 --failed 2`) and pushed; Pages redeployed.
-- [ ] Eval table in README matches `evals/results/latest.md` exactly.
+- [x] `pytest -q` and `ruff check .` green on `dev`; CI pipeline green (2026-10-26).
+- [x] Showcase upgrades re-run into public projects and their recordings exported with
+      explicit `--ids` (never `--succeeded N`, which drops older showcase runs from the
+      index); Pages redeployed (2026-10-26).
+- [x] Eval table in README matches `evals/results/latest.md` exactly.
 - [ ] README quick start followed from a clean clone on one machine (venv, npm build,
       probe, one run).
-- [ ] Video recorded, uploaded, link in this file and in the README.
+- [ ] Video under 3 minutes, public on YouTube, link in this file and in the README.
 - [ ] FEEDBACK.md read end to end by the author; nothing in it we did not observe.
-- [ ] Showcase MRs still open and not accidentally merged; older MRs closed.
+- [x] Showcase MRs (pyshop-legacy !1, !2; flask-notes !1) open, public, not merged
+      (2026-10-26).
 - [ ] `.env` never committed (`git log --all -p -- .env` empty).
 
-## Video script (target 3:45)
+## Video script (target 2:50; the rules require under 3 minutes, public on YouTube)
 
 Record at 1920x1080, browser zoomed to 110%, dark theme, no notifications. Voice over the
 screen; no face cam needed. Record the live run segment in real time and cut the waiting;
 keep timestamps visible so the compression is honest.
 
-**0:00 to 0:20. Hook.** Screen: pyshop-legacy MR !1, the Changes tab, scrolled to
-`models.py`. "This merge request upgraded pydantic from 1 to 2 in a legacy codebase:
-validators, config, root models, the settings split. Seventeen tests pass. A second model
-reviewed it. No human wrote a line of it. Dependabot opens the PR; Upshift finishes it."
+About 290 words of narration; at a normal pace that fits 2:50 with room for pauses. Cut
+the live-run waiting hard. If the final edit runs over 2:58, shorten the live run first.
 
-**0:20 to 0:50. The problem.** Screen: MR !1 description, scrolled to the "Code changes and
-why" table. "A version bump is the easy part. The work is reading the changelog, finding
-which of the forty documented changes touch your code, rewriting it, and proving nothing
-broke. Upshift does that, and it shows its evidence: every edit links to the changelog line
-that justifies it, and the verification table shows what the bare bump would have left you
-with: zero tests, import errors."
+**0:00 to 0:15. Hook.** Screen: pyshop-legacy MR !1, the Changes tab, scrolled to
+`models.py`. "This merge request upgraded pydantic from 1 to 2 in a legacy codebase.
+Seventeen tests pass, a second model reviewed it, and no human wrote a line of it.
+Dependabot opens the PR; Upshift finishes it."
 
-**0:50 to 2:10. Live run.** Screen: Mission Control at localhost:8000 (live mode). Click
-**Start upgrade run** with the pre-filled pydantic case. Narrate as events arrive: "The
-Scout maps which pydantic symbols the code actually uses. The Historian, Nemotron 3.5
-Lightning with a million-token context, reads the whole migration guide through Tavily and
-produces an Impact Dossier: documented changes intersected with our usage." Click
-**Evidence** tab briefly. "The Surgeon, Nemotron Ultra, bumps the pin, runs the tests in a
-Docker sandbox, and edits until green. Watch the counts." Cut waiting; show attempts in the
-**Attempts** tab with test counts rising; show a rolled-back attempt if one happens: "When an
-attempt makes things worse it is rolled back, and the model is told why." At green: "The
-Reviewer reads the diff adversarially. An Auditor fact-checks its blockers against the
-installed API and the real files, because reviewers hallucinate too." Click **Review**.
-Then **Merge request** tab, click the MR link.
+**0:15 to 0:35. The problem.** Screen: MR !1 description, scrolled to the "Code changes and
+why" table. "The version bump is the easy part. The work is finding which documented
+changes touch your code, rewriting it, and proving nothing broke. Every edit here links to
+the changelog line that justifies it; the bare bump left zero tests running."
 
-**2:10 to 2:50. The hard case.** Screen: Pages replay, open the Flask run. "Flask 2 to 3.
-pip refuses the install: Werkzeug, Jinja2, click and itsdangerous are pinned. Upshift reads
-pip's conflict report and co-upgrades them, four rounds, no model involved." Drag the
-slider to the co-upgrade events. "Then removed APIs and a conftest that will not even
-import. Eight of nine tests pass after three attempts; the last one, JSON key order, does
-not move." Show the Attempts tab: "Two attempts are rolled back because they changed
-nothing, so stuck escalation tells the model its approach is wrong and lets it rewrite the
-module. Attempt six: nine of nine." Show the Review tab: "The reviewer approves, and the
-merge request is public, linked from the README."
+**0:35 to 1:35. Live run.** Screen: Mission Control at localhost:8000 (live mode). Click
+**Start upgrade run** with the pre-filled pydantic case; cut the waiting. "The Scout maps
+which pydantic symbols the code uses. The Historian, Nemotron 3.5 Lightning with a
+million-token context, reads the whole migration guide through Tavily." Click **Evidence**.
+"The Surgeon, Nemotron Ultra, edits and re-runs the tests in a Docker sandbox until green;
+an attempt that makes things worse is rolled back." Click **Attempts**, then **Review**:
+"The Reviewer reads the diff adversarially, and an Auditor fact-checks its blockers." Click
+**Merge request**, then the MR link.
 
-**2:50 to 3:25. Numbers and the stack.** Screen: Launch page eval table. "Eighteen runs,
-three per case, through the real pipeline. Seventeen landed. Flask, the hard case, still
-sometimes sticks at eight of nine; an earlier miss there taught us the stuck-escalation
-mechanism. Mean cost about seven cents per upgrade. All of it on Nebius Token Factory: Lightning for reading,
-Ultra for surgery and review, Super for prose. Tavily for the research. Every number comes
-from recorded events, not estimates."
+**1:35 to 2:10. The hard case.** Screen: Pages replay, open the Flask run (top of Recent
+runs). "Flask 2 to 3. pip refuses the install, so Upshift co-upgrades Werkzeug, Jinja2,
+click and itsdangerous from pip's conflict report, no model involved." Drag the slider to
+the co-upgrade events, then click **Attempts**: "Eight of nine tests pass, then two attempts
+change nothing and are rolled back. Stuck escalation tells the model its approach is wrong;
+attempt six goes nine of nine."
 
-**3:25 to 3:45. Honesty and close.** Screen: README "Limitations, honestly". "It is Python
-only. Convergence is probabilistic; the tables show the spread. Green and approved is not
-the same as idiomatic. And everything you saw is replayable at this URL, event by event.
-Upshift: dependency upgrades that finish the job."
+**2:10 to 2:35. Numbers.** Screen: Launch page eval table. "Eighteen runs, three per case,
+through the real pipeline: seventeen landed, about seven cents each, all on Nebius Token
+Factory, with Tavily for the research. Every number comes from recorded events."
+
+**2:35 to 2:50. Honesty and close.** Screen: README "Limitations, honestly". "It is Python
+only, and convergence is probabilistic; the tables show the spread. Everything you saw is
+replayable at this URL. Upshift: dependency upgrades that finish the job."
 
 ## Shot list (exact clicks)
 
@@ -104,6 +96,10 @@ Upshift: dependency upgrades that finish the job."
 If the live run fails on camera: keep recording, say so ("this one did not converge; here is
 the same case from this morning"), and switch to tab D's recorded pydantic run. Failures are
 part of the story and the replay exists precisely for this.
+
+The live run opens a new merge request in `notorandyt/pyshop-legacy` (it will be !3). After
+recording, close it so the three showcase MRs stay the only open ones; never merge any of
+them.
 
 ## Freeze plan
 

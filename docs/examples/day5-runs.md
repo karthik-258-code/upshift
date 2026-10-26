@@ -19,7 +19,8 @@ Docker sandbox, Nemotron Ultra for code edits, Lightning for classification, tar
 
 MRs !1 to !5 were closed: the demo project's `main` had only a README until mid-day (the
 baseline push had never landed), so their diffs showed every file as new. !6 and !7 are the
-showcase.
+showcase. (That demo project is not public; the showcase was re-run into public projects on
+2026-10-25, see the README.)
 
 ## What the two failures taught, and what changed
 

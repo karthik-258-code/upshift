@@ -110,7 +110,7 @@ and click **Start upgrade run**. Or from the CLI:
 ```powershell
 python -m upshift run demo-repos\pyshop-legacy --package pydantic
 python -m upshift run https://gitlab.com/your/repo --package flask --target-project your/repo
-python -m upshift eval --repeat 2            # the results table above
+python -m upshift eval --repeat 3            # the results table above
 python -m upshift export --succeeded 6       # recordings for the static replay site
 ```
 
@@ -159,7 +159,7 @@ docs/          ARCHITECTURE, FEEDBACK, BLUEPRINT, day logs
 
 - Python only (requirements.txt and pyproject); the ecosystem layer is pluggable but only one is implemented.
 - Convergence is probabilistic: the same input can take 2 or 12 attempts. The eval tables show the spread.
-- "Green and approved" is not "idiomatic": the Flask MR hand-rolls a `JSONProvider` where a maintainer would subclass `DefaultJSONProvider`. The Reviewer catches correctness, not taste.
+- "Green and approved" is not "idiomatic": the Flask MR hand-rolls a `JSONProvider` where a maintainer would subclass `DefaultJSONProvider`, and one of its edits orders a response's keys to match the test on top of the real fix (`app.json.sort_keys = False`). The Reviewer catches correctness, not taste.
 - The Auditor can be wrong too; it is a second opinion with evidence, not an oracle.
 - The Nebius Serverless Jobs executor is built on the documented API and unit-tested, but was not exercised against the live service (no compute credits).
 

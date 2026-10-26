@@ -31,7 +31,7 @@ APIs (`flask.escape`, `flask.json.JSONEncoder` and `app.json_encoder`, `JSON_SOR
 | 4 | 12 attempts, 8 blind guesses | $0.30 | all tests returned 500; the traceback lived in captured logs |
 | 5 | 8/9 passing, stuck on one | $0.28 | research query templated from an assertion is useless |
 | 6 | **9/9 in 3 attempts, approve** | $0.05 | |
-| 7 | **9/9, approve, [MR !1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43491832/flask-notes/-/merge_requests/1)**, Auditor contradicted one false blocker | $0.12 | |
+| 7 | **9/9, approve, MR !1** (in a demo project that is not public; the public re-run is [notorandyt/flask-notes!1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1)), Auditor contradicted one false blocker | $0.12 | |
 
 Each failure became a general mechanism in `upshift/agents/surgeon.py` or `verifier.py`:
 

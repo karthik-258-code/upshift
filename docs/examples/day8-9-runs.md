@@ -10,7 +10,8 @@ attempts, review verdict, cost from recorded `llm.call` events, and wall time.
 
 ### Main eval, 2 repeats per case (2026-10-23 01:41 UTC)
 
-See [`evals/results/latest.md`](../../evals/results/latest.md): 7/8 landed. pydantic 5 and 9
+See [`evals/results/20261023-014137.json`](../../evals/results/20261023-014137.json)
+(`latest.md` now holds the final eval of 2026-10-25): 7/8 landed. pydantic 5 and 9
 attempts ($0.08, $0.23); SQLAlchemy 1 and 1 ($0.03 each); requests 0 and 0 ($0.001); Flask 3
 attempts ($0.05) and one miss stuck at 8/9 after 12 attempts ($0.34).
 
@@ -54,4 +55,4 @@ made no attempt, the Reviewer was skipped as manifest-only. Not editing is a res
 | Distinct upgrades landed | 6 (pydantic, SQLAlchemy, requests, Flask, python-dateutil, pytest) |
 | Eval runs | 16, 15 landed |
 | Typical cost per landed upgrade | $0.001 (no edits) to $0.09 (pydantic); hard cases up to $0.34 |
-| Merge requests opened by the agent on GitLab | pyshop-legacy !6, !7; flask-notes !1 |
+| Merge requests opened by the agent on GitLab | pyshop-legacy !6, !7; flask-notes !1 (not public; re-run publicly on 2026-10-25 as notorandyt/pyshop-legacy !1, !2 and notorandyt/flask-notes !1) |
