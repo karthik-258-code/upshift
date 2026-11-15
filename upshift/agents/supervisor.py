@@ -29,6 +29,7 @@ from upshift.llm.client import TokenFactoryClient
 from upshift.llm.router import ModelRouter
 from upshift.sandbox.base import Executor
 from upshift.tools.cache import JsonCache
+from upshift.tools.github_pr import GitHubClient, GitHubError
 from upshift.tools.gitlab_mr import GitLabClient, GitLabError
 from upshift.tools.pypi import PyPIClient
 from upshift.tools.tavily_extract import TavilyExtractTool
@@ -106,6 +107,7 @@ class Supervisor:
         extract: TavilyExtractTool,
         executor: Executor,
         gitlab: GitLabClient | None = None,
+        github: GitHubClient | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
@@ -117,6 +119,7 @@ class Supervisor:
         self.extract = extract
         self.executor = executor
         self.gitlab = gitlab
+        self.github = github
 
     async def _emit(self, run_id: str, type_: EventType, **payload: Any) -> None:
         node = payload.pop("_node", None)
@@ -270,30 +273,59 @@ class Supervisor:
                 dep, dossier, surgery, review, run.id, budget
             )
             outcome.merge_request = draft.to_dict()
-            target = run.target_project or GitLabClient.project_path_from_url(run.repo_url)
-            if self.gitlab is not None and target:
-                files: dict[str, str | None] = {}
-                for rel in surgery.files_changed:
-                    path = workspace / rel
-                    files[rel] = (
-                        path.read_text(encoding="utf-8", errors="replace")
-                        if path.is_file() else None
+            github_repo = GitHubClient.repo_from_url(run.repo_url)
+            gitlab_project = GitLabClient.project_path_from_url(run.repo_url)
+            target = run.target_project or github_repo or gitlab_project
+
+            files: dict[str, str | None] = {}
+            for rel in surgery.files_changed:
+                fpath = workspace / rel
+                files[rel] = (
+                    fpath.read_text(encoding="utf-8", errors="replace")
+                    if fpath.is_file() else None
+                )
+
+            published = False
+            if target and self.github is not None and (
+                run.target_project or github_repo
+            ):
+                try:
+                    info = await self.github.publish(target, draft, files)
+                    outcome.merge_request_url = info.web_url
+                    outcome.merge_request.update(info.to_dict())
+                    await self._emit(
+                        run.id, EventType.MR_OPENED, _node=node, **info.to_dict()
                     )
+                    published = True
+                except GitHubError as exc:
+                    log.warning("GitHub pull request publish failed: %s", exc)
+                    await self._emit(
+                        run.id, EventType.AGENT_MESSAGE, _node=node,
+                        message=f"pull request not published: {exc}",
+                    )
+
+            if not published and target and self.gitlab is not None and (
+                run.target_project or gitlab_project
+            ):
                 try:
                     info = await self.gitlab.publish(target, draft, files)
                     outcome.merge_request_url = info.web_url
                     outcome.merge_request.update(info.to_dict())
-                    await self._emit(run.id, EventType.MR_OPENED, _node=node, **info.to_dict())
+                    await self._emit(
+                        run.id, EventType.MR_OPENED, _node=node, **info.to_dict()
+                    )
+                    published = True
                 except GitLabError as exc:
-                    log.warning("merge request publish failed: %s", exc)
+                    log.warning("GitLab merge request publish failed: %s", exc)
                     await self._emit(
                         run.id, EventType.AGENT_MESSAGE, _node=node,
                         message=f"merge request not published: {exc}",
                     )
-            else:
+
+            if not published:
                 await self._emit(
                     run.id, EventType.AGENT_MESSAGE, _node=node,
-                    message="merge request drafted (no GitLab target configured)",
+                    message="merge request drafted (no publish target configured)",
                 )
         outcome.cost_usd = round(self.llm.total_cost_usd - cost_before, 6)
         return outcome
@@ -312,6 +344,10 @@ def build_supervisor(
         GitLabClient(settings.gitlab_url, settings.gitlab_token)
         if settings.gitlab_token else None
     )
+    github = (
+        GitHubClient(settings.github_token, settings.github_api_url)
+        if settings.github_token else None
+    )
     return Supervisor(
         settings=settings, store=store, bus=bus, llm=llm, router=router,
         pypi=PyPIClient(cache=JsonCache(settings.cache_dir / "pypi", ttl_hours=24)),
@@ -319,5 +355,5 @@ def build_supervisor(
         extract=TavilyExtractTool(
             settings.tavily_api_key, cache=tavily_cache, max_chars=400_000
         ),
-        executor=executor, gitlab=gitlab,
+        executor=executor, gitlab=gitlab, github=github,
     )

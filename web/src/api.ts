@@ -30,6 +30,7 @@ export type Health = {
   nebius_configured: boolean;
   tavily_configured: boolean;
   gitlab_configured: boolean;
+  github_configured: boolean;
   capabilities_probed: boolean;
   executor: string;
   pipeline: "agents" | "noop";
@@ -60,7 +61,7 @@ async function json<T>(input: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * Static replay mode. When the API is not reachable (GitLab Pages, or any static host),
+ * Static replay mode. When the API is not reachable (GitHub Pages, or any static host),
  * runs are read from `runs/index.json` and `runs/<id>.json` written by `upshift export`.
  * Detected once per page load; relative paths keep it working under a Pages subpath.
  */
@@ -81,6 +82,7 @@ const STATIC_HEALTH: Health = {
   nebius_configured: false,
   tavily_configured: false,
   gitlab_configured: false,
+  github_configured: false,
   capabilities_probed: true,
   executor: "recorded",
   pipeline: "noop",

@@ -69,7 +69,7 @@ class Run(BaseModel):
     policy: str = "balanced"
     budget_cap_usd: float = 2.0
     packages: list[str] = Field(default_factory=list)  # restrict to these dependencies
-    target_project: str | None = None  # GitLab project path to open merge requests in
+    target_project: str | None = None  # GitHub owner/repo or GitLab project path for PRs/MRs
     status: RunStatus = RunStatus.QUEUED
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

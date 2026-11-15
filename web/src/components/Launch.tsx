@@ -121,7 +121,7 @@ export default function Launch({ readonly }: { readonly: boolean }) {
               </label>
             </div>
             <label className="block">
-              <span className="text-xs uppercase tracking-wide text-zinc-500">GitLab project for the merge request (optional)</span>
+              <span className="text-xs uppercase tracking-wide text-zinc-500">GitHub owner/repo or GitLab project for the PR/MR (optional)</span>
               <input className={`${field} mono mt-1`} value={target} onChange={(e) => setTarget(e.target.value)} />
             </label>
             {health && health.pipeline === "noop" && (
@@ -179,7 +179,7 @@ export default function Launch({ readonly }: { readonly: boolean }) {
           {[
             ["Models", health ? (health.capabilities_probed ? "Nemotron 3 Nano · Super · Ultra · 3.5 Lightning (probed)" : "catalog not probed") : "…"],
             ["Sandbox", health?.executor ?? "…"],
-            ["Merge requests", health ? (health.gitlab_configured ? "GitLab connected" : "draft only") : "…"],
+            ["Merge requests", health ? (health.github_configured ? "GitHub connected" : health.gitlab_configured ? "GitLab connected" : "draft only") : "…"],
           ].map(([k, v]) => (
             <div key={k} className="rounded-md border border-zinc-800 bg-zinc-900/60 p-3">
               <div className="text-zinc-500 uppercase tracking-wide text-[10px]">{k}</div>

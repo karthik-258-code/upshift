@@ -361,7 +361,10 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument(
         "--policy", choices=["conservative", "balanced", "aggressive"], default="balanced"
     )
-    full.add_argument("--target-project", help="GitLab project path to open MRs in")
+    full.add_argument(
+        "--target-project",
+        help="GitHub owner/repo or GitLab project path to open PRs/MRs in",
+    )
     full.add_argument("--budget", type=float, help="spend cap in USD for this run")
 
     check = sub.add_parser("sandbox-check", help="run a trivial job in the Docker sandbox")

@@ -63,7 +63,7 @@ Supervisor
     Reviewer (ruff + model) -> Auditor per blocker -> review.verdict
     if findings: Surgeon.polish (one attempt, rolled back if anything breaks), re-review
     Scribe -> merge request body
-    GitLab: branch, commit, MR (Draft if blockers remain) -> mr.opened
+    GitHub/GitLab: branch, commit, PR/MR (Draft if blockers remain) -> mr.opened
   run.finished (summary with per-dependency outcomes)
 ```
 
@@ -173,7 +173,7 @@ unless `NEBIUS_ACCEPT_CHARGES=1`.
 consumes `/api/runs`, `/api/runs/{id}` and the SSE stream, and reduces the event list into
 UI state in `web/src/state.ts`, a pure function, so dragging the replay slider simply reduces
 a prefix of the list. When no API is reachable it reads `runs/index.json` and
-`runs/<id>.json` written by `python -m upshift export`, which is how the GitLab Pages site
+`runs/<id>.json` written by `python -m upshift export`, which is how the GitHub Pages site
 works: a recorded replay of real runs, at no hosting cost.
 
 ## 9. Evaluation

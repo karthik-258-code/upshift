@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     tavily_api_key: str = ""
     gitlab_token: str = ""
     gitlab_url: str = "https://gitlab.com"
+    github_token: str = ""
+    github_api_url: str = "https://api.github.com"
 
     models_file: Path = ROOT / "config" / "models.yaml"
     capabilities_file: Path = ROOT / "config" / "capabilities.json"

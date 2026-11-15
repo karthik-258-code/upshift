@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  base: "./", // relative asset paths: works at / behind FastAPI and under a GitLab Pages subpath
+  base: "./", // relative asset paths: works at / behind FastAPI and under a GitHub/GitLab Pages subpath
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,

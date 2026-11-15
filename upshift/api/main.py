@@ -156,6 +156,7 @@ def create_app(
             "capabilities_probed": catalog.probed,
             "executor": settings.executor,
             "gitlab_configured": bool(settings.gitlab_token),
+            "github_configured": bool(settings.github_token),
             "pipeline": "agents" if launch is pipeline_launcher else "noop",
         }
 

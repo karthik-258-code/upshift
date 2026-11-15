@@ -63,7 +63,7 @@ upshift-upgrade:
       if [ -n "$[[ inputs.upshift_install ]]" ]; then
         pip install -q "$[[ inputs.upshift_install ]]"
       else
-        pip install -q "git+https://gitlab.com/notorandyt/upshift.git@$[[ inputs.upshift_ref ]]"
+        pip install -q "git+https://github.com/karthik-258-code/upshift.git@$[[ inputs.upshift_ref ]]"
       fi
     - docker version --format '{{.Server.Version}}'
   script:

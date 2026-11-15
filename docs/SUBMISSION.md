@@ -8,7 +8,7 @@ is GitLab Pages, so it will).
 
 | Item | Where |
 | --- | --- |
-| Repository | https://gitlab.com/notorandyt/upshift |
+| Repository | https://github.com/karthik-258-code/upshift |
 | Hosted demo (recorded replay of real runs) | https://notorandyt.gitlab.io/upshift/ |
 | Merge requests Upshift opened | pyshop-legacy [!1](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/1) (pydantic), [!2](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/2) (SQLAlchemy); flask-notes [!1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1) (Flask) |
 | Video (under 3 minutes, public on YouTube) | link to be added |

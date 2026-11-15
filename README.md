@@ -9,11 +9,10 @@ Built for the **Nebius x NVIDIA Global AI Hackathon**, Coding and Agentic Engine
 Powered by **NVIDIA Nemotron 3** (Nano, Super, Ultra, 3.5 Lightning) on **Nebius Token
 Factory**, with **Tavily** for changelog research. Apache 2.0.
 
-- **Repository:** https://gitlab.com/notorandyt/upshift
-- **Live replay (Mission Control):** https://notorandyt.gitlab.io/upshift/ : real runs, every event, diff and review; drag the slider.
-- **Merge requests Upshift opened:** [pydantic 1.10 -> 2.14](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/1), [SQLAlchemy 1.4 -> 2.1](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/2), [Flask 2.0 -> 3.1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1) (after co-upgrading Werkzeug, Jinja2, click and itsdangerous from pip's conflict report).
+- **Repository:** https://github.com/karthik-258-code/upshift
+- **Merge requests Upshift opened (hackathon evidence):** [pydantic 1.10 -> 2.14](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/1), [SQLAlchemy 1.4 -> 2.1](https://gitlab.com/notorandyt/pyshop-legacy/-/merge_requests/2), [Flask 2.0 -> 3.1](https://gitlab.com/notorandyt/flask-notes/-/merge_requests/1) (after co-upgrading Werkzeug, Jinja2, click and itsdangerous from pip's conflict report).
 - **Docs:** [ARCHITECTURE](docs/ARCHITECTURE.md) · [FEEDBACK for Nebius/NVIDIA](docs/FEEDBACK.md) · [SUBMISSION](docs/SUBMISSION.md) · day logs [5](docs/examples/day5-runs.md), [6-7](docs/examples/day6-7-runs.md), [8-9](docs/examples/day8-9-runs.md) · [BLUEPRINT](docs/BLUEPRINT.md)
-- **CI:** include [`templates/upshift.yml`](templates/upshift.yml) in any Python project's pipeline to run Upshift as a job that opens the MR in that project.
+- **CI:** use the [GitHub Actions workflow](.github/workflows/upshift.yml) or the [GitLab CI template](templates/upshift.yml) to run Upshift as a job that opens PRs/MRs in your project.
 
 ## Results
 
@@ -90,7 +89,7 @@ Requirements: Python 3.11+, Docker Desktop (sandbox), Node 20+ (UI).
 
 ```powershell
 # 1. credentials
-copy .env.example .env      # set NEBIUS_API_KEY, TAVILY_API_KEY, optionally GITLAB_TOKEN
+copy .env.example .env      # set NEBIUS_API_KEY, TAVILY_API_KEY, optionally GITHUB_TOKEN or GITLAB_TOKEN
 
 # 2. install
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
@@ -109,7 +108,7 @@ and click **Start upgrade run**. Or from the CLI:
 
 ```powershell
 python -m upshift run demo-repos\pyshop-legacy --package pydantic
-python -m upshift run https://gitlab.com/your/repo --package flask --target-project your/repo
+python -m upshift run https://github.com/your/repo --package flask --target-project your/repo
 python -m upshift eval --repeat 3            # the results table above
 python -m upshift export --succeeded 6       # recordings for the static replay site
 ```
@@ -121,7 +120,8 @@ macOS / Linux: same commands with `source .venv/bin/activate`, or `./scripts/run
 | `NEBIUS_API_KEY` | Token Factory API key (required) |
 | `NEBIUS_BASE_URL` | Defaults to `https://api.tokenfactory.us-central1.nebius.com/v1/` |
 | `TAVILY_API_KEY` | Changelog search and extraction (required) |
-| `GITLAB_TOKEN` | Opening merge requests in `--target-project` (optional; drafts otherwise) |
+| `GITHUB_TOKEN` | Opening pull requests on GitHub in `--target-project` (optional; drafts otherwise) |
+| `GITLAB_TOKEN` | Opening merge requests on GitLab in `--target-project` (optional; drafts otherwise) |
 | `DEFAULT_BUDGET_USD` | Per-run spend cap, default 2.00 |
 | `EXECUTOR` | `docker` (default) or `nebius` (requires `NEBIUS_ACCEPT_CHARGES=1` and the `NEBIUS_*` settings in `upshift/config.py`) |
 | `SANDBOX_IMAGE` | `python:3.12-slim` (default); set `python:3.12` for projects whose dependencies need a compiler |
@@ -145,7 +145,7 @@ upshift/
   ecosystems/  Python manifest parsing and AST symbol-usage scanner
   llm/         model catalog, routing, Token Factory client, structured output
   sandbox/     executor contract, Docker backend, Nebius Serverless Jobs backend, factory
-  tools/       Tavily search/extract, PyPI client, GitLab merge requests, cache
+  tools/       Tavily search/extract, PyPI client, GitHub PRs, GitLab MRs, cache
   evals.py     eval harness
   cli.py       python -m upshift scout|research|upgrade|run|eval|export|sandbox-check
 web/           Mission Control (Vite + React + TS + Tailwind); web/public/runs = recordings

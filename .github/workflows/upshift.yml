@@ -1,0 +1,58 @@
+# Upshift as a GitHub Actions workflow.
+#
+# Copy this file into your project's .github/workflows/ directory. Upshift will upgrade a
+# dependency, verify the project's own tests in a Docker sandbox, and open a pull request
+# with every edit linked to the changelog line that justifies it.
+#
+# Required secrets: NEBIUS_API_KEY, TAVILY_API_KEY, and a GITHUB_TOKEN with repo scope
+# (the default GITHUB_TOKEN works for PRs in the same repo).
+
+name: Upshift
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly on Monday at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Dependency to upgrade (empty = let policy pick)"
+        default: ""
+      policy:
+        description: "conservative | balanced | aggressive"
+        default: "balanced"
+      budget_usd:
+        description: "Token Factory spend cap"
+        default: "2.00"
+
+jobs:
+  upshift:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:27-dind
+        options: --privileged
+    env:
+      NEBIUS_API_KEY: ${{ secrets.NEBIUS_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      EXECUTOR: docker
+      DEFAULT_BUDGET_USD: ${{ inputs.budget_usd || '2.00' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q "git+https://github.com/karthik-258-code/upshift.git@dev"
+      - run: |
+          PKG_ARGS=""
+          if [ -n "${{ inputs.package }}" ]; then PKG_ARGS="--package ${{ inputs.package }}"; fi
+          python -m upshift run . $PKG_ARGS \
+            --policy "${{ inputs.policy || 'balanced' }}" \
+            --target-project "${{ github.repository }}" \
+            --budget "${{ inputs.budget_usd || '2.00' }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upshift-data
+          path: .data/
+          retention-days: 7

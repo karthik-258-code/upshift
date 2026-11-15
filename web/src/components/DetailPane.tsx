@@ -172,7 +172,7 @@ function MergeRequest({ dep }: { dep: DepState }) {
           Open merge request {mr.iid ? `!${mr.iid}` : ""} ↗
         </a>
       ) : (
-        <p className="text-xs text-zinc-500">Drafted locally (no GitLab target configured).</p>
+        <p className="text-xs text-zinc-500">Drafted locally (no publish target configured).</p>
       )}
       {mr.title && <h3 className="mt-4 text-sm font-semibold text-zinc-100">{mr.title}</h3>}
       {mr.description && (
