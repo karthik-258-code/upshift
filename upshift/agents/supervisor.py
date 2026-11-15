@@ -308,11 +308,11 @@ class Supervisor:
                 run.target_project or gitlab_project
             ):
                 try:
-                    info = await self.gitlab.publish(target, draft, files)
-                    outcome.merge_request_url = info.web_url
-                    outcome.merge_request.update(info.to_dict())
+                    gl_info = await self.gitlab.publish(target, draft, files)
+                    outcome.merge_request_url = gl_info.web_url
+                    outcome.merge_request.update(gl_info.to_dict())
                     await self._emit(
-                        run.id, EventType.MR_OPENED, _node=node, **info.to_dict()
+                        run.id, EventType.MR_OPENED, _node=node, **gl_info.to_dict()
                     )
                     published = True
                 except GitLabError as exc:
